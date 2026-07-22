@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /teacher-login.html
+Sitemap: https://saad-ewida-science-platform.vercel.app/sitemap.xml
