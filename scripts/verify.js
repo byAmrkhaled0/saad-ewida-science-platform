@@ -214,7 +214,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '63.2.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.2.0'") || !read('service-worker.js').includes('mf-science-v632-production')) fail('V63 version and cache identifiers are not unified');
+if (packageInfo.version !== '63.3.1' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.1'") || !read('service-worker.js').includes('mf-science-v6331-production')) fail('V63 version and cache identifiers are not unified');
 for (const feature of ['renderMonthlyPaymentsV63','renderExamsManagerV63','renderAssignmentsManagerV63','renderOnlineManagerV63','renderReports','renderSettings','openStudentEditModal']) {
   if (!adminSourceCode.includes(feature) && feature !== 'openStudentEditModal') fail(`V63 administration feature is missing: ${feature}`);
 }

@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 function Invoke-Checked {
   param(
@@ -43,10 +43,11 @@ Write-Host "7/7 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked git add -A
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked git commit -m "Complete production release V63.2"
+  Invoke-Checked git commit -m "Complete production release V63.3.1"
   Invoke-Checked git push origin main
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow
 }
 
 Write-Host "Done. Wait for the Vercel Production deployment to become Ready." -ForegroundColor Green
+

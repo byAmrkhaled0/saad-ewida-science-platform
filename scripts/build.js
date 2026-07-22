@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '63.2.0';
+const release = '63.3.1';
 const seoPages = {
   'index.html': ['الأستاذ سعد عويضة | أحياء وعلوم وعلوم متكاملة', 'منصة الأستاذ سعد عويضة لشرح الأحياء والعلوم والعلوم المتكاملة: حجز، محاضرات أونلاين، تسجيلات، مراجعات، امتحانات ومتابعة دقيقة للطالب.'],
   'services.html': ['خدمات الأستاذ سعد عويضة التعليمية | أحياء وعلوم', 'تعرف على خدمات الأستاذ سعد عويضة: شرح مبسط، محاضرات مباشرة، تسجيلات، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -129,8 +129,10 @@ for (const name of [...cssParts, ...publicJsParts, ...adminJsParts, ...legacyAdm
 for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) {
   const filePath = path.join(dist, file);
   let html = fs.readFileSync(filePath, 'utf8');
-  html = html.replace(/(?:<link[^>]+href=["']assets\/(?:site|v55|v56|v57|v59|v60|v61)\.css[^>]*>\s*)+/gi, `<link rel="stylesheet" href="assets/platform.css?v=${release}">\n`);
-  html = html.replace(/(?:<script defer src=["']assets\/(?:app|v53-upgrades|v56-fixes)\.js[^>]*><\/script>\s*)+/gi, `<script defer src="assets/platform.js?v=${release}"></script>\n`);
+  // Accept both relative and root-relative asset paths. offline.html uses
+  // /assets/... because it is served as the PWA navigation fallback.
+  html = html.replace(/(?:<link[^>]+href=["']\/?assets\/(?:site|v55|v56|v57|v59|v60|v61)\.css[^>]*>\s*)+/gi, `<link rel="stylesheet" href="assets/platform.css?v=${release}">\n`);
+  html = html.replace(/(?:<script defer src=["']\/?assets\/(?:app|v53-upgrades|v56-fixes)\.js[^>]*><\/script>\s*)+/gi, `<script defer src="assets/platform.js?v=${release}"></script>\n`);
   if (file === 'teacher-login.html') {
     html = html.replace(/<script defer src=["']assets\/(?:platform|app|admin|v53-upgrades|v55-admin|v56-fixes|v59-admin|v60-admin)\.js[^>]*><\/script>\s*/gi, '');
     html = html.replace('</body>', `<script defer src="assets/admin-platform.js?v=${release}"></script>\n</body>`);
@@ -147,5 +149,32 @@ const sitemapPages = Object.keys(seoPages).filter(file => !privatePages.has(file
 const today = new Date().toISOString().slice(0,10);
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapPages.map(file => `  <url><loc>${file==='index.html'?`${siteUrl}/`:`${siteUrl}/${file}`}</loc><lastmod>${today}</lastmod><changefreq>${file==='index.html'?'weekly':'monthly'}</changefreq><priority>${file==='index.html'?'1.0':'0.7'}</priority></url>`).join('\n')}\n</urlset>\n`;
 fs.writeFileSync(path.join(dist, 'sitemap.xml'), sitemap);
+
+// Fail the production build if a page points at an asset removed by bundling
+// or if the same surface bundle is injected twice. This protects the PWA
+// fallback as well as pages with an extra page-specific script.
+const builtPages = fs.readdirSync(dist).filter(name => name.endsWith('.html'));
+const buildReferenceErrors = [];
+for (const file of builtPages) {
+  const html = fs.readFileSync(path.join(dist, file), 'utf8');
+  for (const match of html.matchAll(/(?:src|href)=["']([^"'#]+)["']/gi)) {
+    const raw = match[1];
+    if (/^(?:https?:|mailto:|tel:|javascript:|data:)/i.test(raw)) continue;
+    const clean = raw.split('?')[0].replace(/^\//, '');
+    if (clean && !fs.existsSync(path.join(dist, clean))) {
+      buildReferenceErrors.push(`${file}: missing ${raw}`);
+    }
+  }
+  const publicBundles = (html.match(/assets\/platform\.js/g) || []).length;
+  const adminBundles = (html.match(/assets\/admin-platform\.js/g) || []).length;
+  if (file === 'teacher-login.html') {
+    if (publicBundles !== 0 || adminBundles !== 1) buildReferenceErrors.push(`${file}: invalid admin bundle count`);
+  } else if (publicBundles !== 1 || adminBundles !== 0) {
+    buildReferenceErrors.push(`${file}: invalid public bundle count`);
+  }
+}
+if (buildReferenceErrors.length) {
+  throw new Error(`Production build validation failed:\n${buildReferenceErrors.join('\n')}`);
+}
 
 console.log('Vercel build ready: static files copied, SEO metadata generated, and assets versioned.');
