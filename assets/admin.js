@@ -125,6 +125,9 @@ function unauthorized(message='غير مصرح لك بالدخول.'){
 
 function adminLogin(){
   const form=document.getElementById('loginForm'); if(!form) return;
+  const password=form.password,passwordToggle=document.getElementById('passwordToggle'),resetButton=document.getElementById('passwordResetButton');
+  if(passwordToggle)passwordToggle.onclick=()=>{const show=password.type==='password';password.type=show?'text':'password';passwordToggle.textContent=show?'إخفاء':'إظهار';passwordToggle.setAttribute('aria-label',show?'إخفاء كلمة المرور':'إظهار كلمة المرور');};
+  if(resetButton)resetButton.onclick=async()=>{const email=form.email.value.trim();if(!email)return aToast('اكتب بريد المدرس أولًا ثم اضغط استعادة كلمة المرور.');resetButton.disabled=true;try{await window.MFCloud?.sendPasswordReset?.(email);aToast('تم إرسال رابط الاستعادة. راجع البريد والرسائل غير المرغوب فيها.');}catch(error){aToast(adminLoginErrorMessage(error,'تعذر إرسال رابط الاستعادة.'));}finally{resetButton.disabled=false;}};
   form.addEventListener('submit',async e=>{
     e.preventDefault();
     const email=form.email.value.trim(); const pass=form.password.value;
@@ -132,12 +135,26 @@ function adminLogin(){
     try{
       await window.MFCloud.signIn(email,pass);
       currentStaff = await window.MFCloud.getCurrentStaffProfile();
-      if(!currentStaff?.allowed){ await window.MFCloud.signOut?.(); unauthorized('غير مصرح لك بالدخول.'); return; }
+      if(!currentStaff?.profileExists){await window.MFCloud.signOut?.();unauthorized('الحساب صحيح لكنه غير مضاف إلى فريق العمل. راجع تطابق UID داخل users في Firestore.');return;}
+      if(currentStaff?.active===false){await window.MFCloud.signOut?.();unauthorized('حساب المدرس موقوف حاليًا.');return;}
+      if(!currentStaff?.allowed){ await window.MFCloud.signOut?.(); unauthorized('الحساب موجود لكن صلاحية role غير صحيحة. استخدم admin أو teacher.'); return; }
       await reloadFromCloud();
       renderAdmin();
       aToast('تم الدخول إلى لوحة المدرس');
-    }catch(err){ aToast('بيانات الدخول غير صحيحة أو الحساب غير مصرح له'); }
+    }catch(err){ aToast(adminLoginErrorMessage(err)); }
   });
+}
+
+function adminLoginErrorMessage(error,fallback='تعذر تسجيل الدخول.'){
+  const raw=`${error?.code||''} ${error?.message||''}`.toLowerCase();
+  if(/invalid-credential|wrong-password|user-not-found|invalid-login-credentials/.test(raw))return 'البريد أو كلمة المرور غير صحيحة. استخدم استعادة كلمة المرور إذا لزم.';
+  if(/invalid-email/.test(raw))return 'صيغة البريد الإلكتروني غير صحيحة.';
+  if(/user-disabled/.test(raw))return 'هذا الحساب موقوف من Firebase Authentication.';
+  if(/too-many-requests/.test(raw))return 'محاولات دخول كثيرة. انتظر قليلًا أو أعد تعيين كلمة المرور.';
+  if(/network-request-failed|unavailable|network|fetch/.test(raw))return 'تعذر الاتصال بـFirebase. تحقق من الإنترنت ثم حاول مرة أخرى.';
+  if(/unauthorized-domain/.test(raw))return 'نطاق الموقع غير مضاف داخل Authorized domains في Firebase.';
+  if(/permission-denied|insufficient-permission/.test(raw))return 'تم الدخول لكن Firestore رفض قراءة صلاحية الحساب. راجع UID وقواعد Firestore.';
+  return fallback;
 }
 
 async function tryRestoreSession(){

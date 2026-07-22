@@ -142,7 +142,7 @@
       const profile=userDoc.exists?userDoc.data():{};
       const role=profile.role||'';
       const allowed=['admin','teacher','assistant'].includes(role)&&profile.active!==false;
-      return {uid:user.uid,email:user.email,role,allowed,...profile};
+      return {...profile,uid:user.uid,email:user.email,profileExists:userDoc.exists,role,allowed};
     }
 
     function pushStudentOps(ops,student,includeRecords=false){

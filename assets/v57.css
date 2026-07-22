@@ -77,3 +77,6 @@
   .quran-opening span:before,.quran-opening span:after{margin-inline:5px}
   .btn{min-height:50px!important;padding:12px 14px!important;font-size:.89rem}
 }
+
+/* V58 — clearer, accessible teacher sign-in. */
+.password-field{position:relative;display:flex;align-items:center}.password-field input{width:100%;padding-left:76px!important}.password-toggle{position:absolute;left:7px;min-width:60px;min-height:36px;border:0;border-radius:10px;background:var(--surface-2);color:var(--brand);font:inherit;font-size:.76rem;font-weight:1000;cursor:pointer}.login-help-link{border:0;background:transparent;color:var(--brand);font:inherit;font-size:.84rem;font-weight:900;cursor:pointer;padding:8px}.login-help-link:hover{text-decoration:underline}.login-security-note{display:flex;align-items:center;justify-content:center;gap:7px;margin:14px 0 0;color:var(--muted);font-size:.76rem;font-weight:800;text-align:center}.login-card{width:min(100%,470px)!important}.login-card .field{text-align:right}

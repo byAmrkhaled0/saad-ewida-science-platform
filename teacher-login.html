@@ -28,9 +28,11 @@
 <p style="color:var(--muted);font-weight:800;margin-top:0">هذه صفحة خاصة للمدرس فقط وغير ظاهرة في الموقع العام.</p>
 <form class="grid" id="loginForm">
 <div class="field"><label for="adminEmail">البريد الإلكتروني</label><input id="adminEmail" autocomplete="username" inputmode="email" name="email" placeholder="اكتب بريد المدرس" required="" type="email" dir="ltr"/></div>
-<div class="field"><label for="adminPassword">كلمة المرور</label><input id="adminPassword" autocomplete="current-password" name="password" placeholder="اكتب كلمة المرور" required="" type="password" dir="ltr"/></div>
+<div class="field"><label for="adminPassword">كلمة المرور</label><div class="password-field"><input id="adminPassword" autocomplete="current-password" name="password" placeholder="اكتب كلمة المرور" required="" type="password" dir="ltr"/><button type="button" class="password-toggle" id="passwordToggle" aria-label="إظهار كلمة المرور">إظهار</button></div></div>
 <button class="btn primary" type="submit"><span data-icon="user-check"></span> دخول لوحة التحكم</button>
+<button class="login-help-link" id="passwordResetButton" type="button">نسيت كلمة المرور؟ أرسل رابط استعادة</button>
 </form>
+<p class="login-security-note"><span aria-hidden="true">🔒</span> دخول آمن ومخصص لحسابات فريق العمل المعتمدة فقط.</p>
 </div>
 </div>
 <div class="toast" id="toast"></div>
