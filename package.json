@@ -1,6 +1,6 @@
 {
   "name": "saad-ewida-science-platform",
-  "version": "63.3.2",
+  "version": "63.3.3",
   "private": true,
   "scripts": {
     "dev": "npm run build && node local-server.js",

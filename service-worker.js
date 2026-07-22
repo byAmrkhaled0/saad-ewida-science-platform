@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6332-production";
+const CACHE_NAME = "mf-science-v6333-production";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
@@ -9,12 +9,11 @@ const APP_SHELL = [
   "/assets/teacher.webp", "/assets/saad-promo.webp", "/site.webmanifest"
 ];
 
-// Firebase Messaging runs in this same worker so notifications continue while
-// the teacher dashboard is closed. If the CDN is temporarily unavailable the
-// PWA cache/fallback still starts normally.
+// Keep the background SDK on the same origin. A service worker must be able to
+// start without depending on a third-party CDN being reachable at that moment.
 try {
-  importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
-  importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
+  importScripts('/assets/vendor/firebase-app-compat-10.12.5.min.js');
+  importScripts('/assets/vendor/firebase-messaging-compat-10.12.5.min.js');
   firebase.initializeApp({
     apiKey: 'AIzaSyDG5LHrXBeyKFaN1Tmq5HjOX-nOv2z_BBA',
     authDomain: 'saad-ewida-science-platform.firebaseapp.com',
