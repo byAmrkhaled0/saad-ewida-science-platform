@@ -13,9 +13,12 @@
   const normalizeCode=value=>normalizeDigits(value).trim().toUpperCase().replace(/\s+/g,'');
   const serverTime=()=>firebase.firestore.FieldValue.serverTimestamp();
   const nowIso=()=>new Date().toISOString();
+  const dateKey=value=>{if(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value))return value;const date=value?new Date(value):new Date();if(Number.isNaN(date.getTime()))return nowIso().slice(0,10);const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date).reduce((out,part)=>(out[part.type]=part.value,out),{});return `${parts.year}-${parts.month}-${parts.day}`;};
+  const monthKey=value=>dateKey(value).slice(0,7);
 
   try{
     const app=firebase.apps&&firebase.apps.length?firebase.app():firebase.initializeApp(cfg);
+    if(cfg.appCheckSiteKey&&firebase.appCheck){try{firebase.appCheck().activate(cfg.appCheckSiteKey,true);}catch(error){console.warn('app-check-init',error);}}
     const auth=firebase.auth();
     const db=firebase.firestore();
     const storage=firebase.storage();
@@ -44,6 +47,7 @@
 
     const calls={
       getPortalStudent:callable('getPortalStudent'),
+      getPublicResources:callable('getPublicResources'),
       getOnlineContentForStudent:callable('getOnlineContentForStudent'),
       recordLectureProgress:callable('recordLectureProgress'),
       getPublicLeaderboard:callable('getPublicLeaderboard'),
@@ -66,6 +70,8 @@
       getBackupDownloadUrl:callable('getBackupDownloadUrl'),
       restoreAutomaticBackup:callable('restoreAutomaticBackup'),
       deleteStudentSafely:callable('deleteStudentSafely')
+      ,createAttendanceSession:callable('createAttendanceSession')
+      ,claimAttendanceSession:callable('claimAttendanceSession')
     };
 
     function randomCode(prefix){
@@ -91,7 +97,7 @@
         ...s,id:code,code,studentCode:code,parentCode:normalizeCode(s.parentCode||''),
         name:s.studentName||s.name||'',studentName:s.studentName||s.name||'',
         studentPhone:digits(s.studentPhone),parentPhone:digits(s.parentPhone),grade:s.grade||'',month:s.month||'',group:s.group||'',
-        academicYear:s.academicYear||'',term:s.term||'',paid:s.paid===true,paymentDate:s.paymentDate||'',notes:s.notes||'',active:s.active!==false,
+        academicYear:s.academicYear||'',term:s.term||'',deliveryMode:s.deliveryMode==='online'?'online':'center',paid:s.paid===true,paymentDate:s.paymentDate||'',notes:s.notes||'',active:s.active!==false,
         attendance:Array.isArray(s.attendance)?s.attendance:[],grades:Array.isArray(s.grades)?s.grades:[],
         homeworks:Array.isArray(s.homeworks)?s.homeworks:[],recitations:Array.isArray(s.recitations)?s.recitations:[]
       };
@@ -109,7 +115,7 @@
       const s=normalizedStudent(student);
       return {
         studentCode:s.studentCode,code:s.studentCode,parentCode:s.parentCode,name:s.name,studentName:s.studentName,
-        studentPhone:s.studentPhone,parentPhone:s.parentPhone,grade:s.grade,month:s.month,group:s.group,
+        studentPhone:s.studentPhone,parentPhone:s.parentPhone,grade:s.grade,month:s.month,group:s.group,deliveryMode:s.deliveryMode,
         academicYear:s.academicYear,term:s.term,paid:s.paid,paymentDate:s.paymentDate,notes:s.notes,active:s.active
       };
     }
@@ -121,7 +127,7 @@
 
     function publicBookingStatusPayload(payload){
       return {
-        code:payload.code,name:payload.name,grade:payload.grade,month:payload.month,group:payload.group,
+        code:payload.code,name:payload.name,grade:payload.grade,month:payload.month,group:payload.group,deliveryMode:payload.deliveryMode==='online'?'online':'center',
         academicYear:payload.academicYear||'',term:payload.term||'',status:payload.status,
         studentCode:String(payload.studentCode||''),parentCode:String(payload.parentCode||''),updatedAt:serverTime()
       };
@@ -196,9 +202,16 @@
         const body={...item,id,updatedAt:serverTime()};if(collection==='reviews')body.approved=item.approved===true;
         if(changed(`${collection}/${id}`,body))ops.push(batch=>batch.set(db.collection(collection).doc(id),body,{merge:true}));
       }));
+      (data.paymentRecords||[]).forEach(item=>{
+        const id=cleanDocId(item.id||`${normalizeCode(item.studentCode)}_${item.monthKey||''}`);
+        if(!id)return;
+        const body={...item,id,studentCode:normalizeCode(item.studentCode),paid:item.paid===true,updatedAt:serverTime()};
+        if(changed(`payment_records/${id}`,body))ops.push(batch=>batch.set(db.collection('payment_records').doc(id),body,{merge:true}));
+      });
       if(options.full===true)(data.grades||[]).forEach(item=>{
         const id=cleanDocId(item.id||`${item.studentCode||'student'}_${item.examId||item.exam||'exam'}_${item.date||Date.now()}`);
-        ops.push(batch=>batch.set(db.collection('grades').doc(id),{...item,id,updatedAt:serverTime()},{merge:true}));
+        const gradeDate=item.date||item.submittedAt||nowIso();
+        ops.push(batch=>batch.set(db.collection('grades').doc(id),{...item,id,date:dateKey(gradeDate),monthKey:item.monthKey||monthKey(gradeDate),updatedAt:serverTime()},{merge:true}));
       });
       if(options.full===true)(data.examAttempts||[]).forEach(item=>{
         const id=cleanDocId(item.id||`${item.examId||'exam'}_${item.studentCode||'student'}_${Date.now()}`);
@@ -209,6 +222,10 @@
           const summary={id,studentCode,examId:item.examId||'',examTitle:item.examTitle||item.exam||'امتحان',submittedAt:item.submittedAt||item.date||'',score:item.score??null,autoScore:item.autoScore??null,needsManualReview:item.needsManualReview===true,status:item.status||'',academicYear:item.academicYear||'',term:item.term||''};
           ops.push(batch=>batch.set(parent,{studentCode,lastAttempt:summary,updatedAt:serverTime()},{merge:true}));
           ops.push(batch=>batch.set(parent.collection('attempts').doc(id),summary,{merge:true}));
+          if(item.score!==null&&item.score!==undefined&&item.score!==''){
+            const gradeDate=item.submittedAt||item.date||nowIso();
+            ops.push(batch=>batch.set(db.collection('grades').doc(id),{id,attemptId:id,examId:item.examId||'',exam:item.examTitle||item.exam||'امتحان',examTitle:item.examTitle||item.exam||'امتحان',studentCode,studentName:item.studentName||'',grade:item.grade||'',group:item.group||'',score:Number(item.score),maxScore:Number(item.maxScore||100),date:dateKey(gradeDate),submittedAt:gradeDate,monthKey:monthKey(gradeDate),source:'exam_attempt_sync',updatedAt:serverTime()},{merge:true}));
+          }
         }
       });
       const settings={...(data.settings||{}),schemaVersion:54};if(changed('settings/platform',settings))ops.push(batch=>batch.set(platformSettingsDoc,{...settings,updatedAt:serverTime()},{merge:true}));
@@ -231,19 +248,19 @@
       // Mobile visitors should not download every public collection on every
       // page. The booking page needs schedules and reviews; resource pages
       // fetch their own content; portals use secure callable responses.
-      const [materials,questions,reviews,groups,assignments,settings]=await Promise.all([
-        resources?getDocs('materials').catch(()=>[]):[],resources?getDocs('questions').catch(()=>[]):[],
+      const [resourceData,reviews,groups,settings]=await Promise.all([
+        resources&&calls.getPublicResources?calls.getPublicResources({}).catch(()=>({materials:[],questions:[]})):Promise.resolve({materials:[],questions:[]}),
         (home||reviewsPage)?getApprovedReviews().catch(()=>[]):[],home?getDocs('groups').catch(()=>[]):[],
-        resources?getDocs('assignments').catch(()=>[]):[],getSettings().catch(()=>({}))
+        getSettings().catch(()=>({}))
       ]);
-      return {students:[],bookings:[],materials,questions,exams:[],reviews,groups,assignments,examAttempts:[],grades:[],settings};
+      return {students:[],bookings:[],materials:resourceData.materials||[],questions:resourceData.questions||[],exams:[],reviews,groups,assignments:[],paymentRecords:[],examAttempts:[],grades:[],settings};
     }
 
     async function loadStaffCoreCollections(){
-      const [students,bookings,materials,questions,exams,reviews,groups,assignments,payments,settings]=await Promise.all([
+      const [students,bookings,materials,questions,exams,reviews,groups,assignments,payments,paymentRecords,settings]=await Promise.all([
         getDocs('students').catch(()=>[]),getDocs('bookings').catch(()=>[]),getDocs('materials').catch(()=>[]),getDocs('questions').catch(()=>[]),
         getDocs('exams').catch(()=>[]),getDocs('reviews').catch(()=>[]),getDocs('groups').catch(()=>[]),getDocs('assignments').catch(()=>[]),
-        getDocs('payments',3000).catch(()=>[]),getSettings().catch(()=>({}))
+        getDocs('payments',3000).catch(()=>[]),getDocs('payment_records',5000).catch(()=>[]),getSettings().catch(()=>({}))
       ]);
       const normalized=students.map(normalizedStudent);const map=new Map(normalized.map(st=>[st.studentCode,st]));
       payments.forEach(row=>{const st=map.get(normalizeCode(row.studentCode||row.studentId||''));if(st){st.paid=row.paid===true;st.paymentDate=row.paymentDate||st.paymentDate;}});
@@ -253,9 +270,10 @@
       });
       bookings.forEach(item=>seedFingerprint('bookings',cleanDocId(item.code||item.id),item));
       payments.forEach(item=>seedFingerprint('payments',cleanDocId(item.studentCode||item.studentId||item.id),item));
+      paymentRecords.forEach(item=>seedFingerprint('payment_records',cleanDocId(item.id||`${item.studentCode}_${item.monthKey}`),item));
       [['materials',materials],['questions',questions],['exams',exams],['reviews',reviews],['groups',groups],['assignments',assignments]].forEach(([collection,rows])=>rows.forEach(item=>seedFingerprint(collection,cleanDocId(item.id),item)));
       seedFingerprint('settings','platform',settings);
-      return {students:normalized,bookings,materials,questions,exams,reviews,groups,assignments,examAttempts:[],grades:[],settings};
+      return {students:normalized,bookings,materials,questions,exams,reviews,groups,assignments,paymentRecords,examAttempts:[],grades:[],settings};
     }
 
     async function loadStaffRecordCollections(){
@@ -269,15 +287,36 @@
       return {attempts,grades,attendance,recitations,homeworks};
     }
 
+    async function loadPortalStudentDirectForStaff(code){
+      const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
+      const studentCode=normalizeCode(code),id=cleanDocId(studentCode),studentSnap=await db.collection('students').doc(id).get();
+      if(!studentSnap.exists||studentSnap.data()?.active===false)throw new Error('Student not found');
+      const rows=async collection=>{const snap=await db.collection(collection).where('studentCode','==',studentCode).limit(250).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));};
+      const [attendance,grades,homeworks,recitations,attempts,payment,paymentRecords,assignments]=await Promise.all([
+        rows('attendance').catch(()=>[]),rows('grades').catch(()=>[]),rows('homework_submissions').catch(()=>[]),rows('recitations').catch(()=>[]),rows('exam_attempts').catch(()=>[]),
+        db.collection('payments').doc(id).get().catch(()=>null),rows('payment_records').catch(()=>[]),getDocs('assignments',300).catch(()=>[])
+      ]);
+      const student=normalizedStudent({id,...studentSnap.data(),studentCode,code:studentCode});
+      if(payment?.exists){student.paid=payment.data().paid===true;student.paymentDate=payment.data().paymentDate||student.paymentDate;}
+      student.paymentHistory=paymentRecords.sort((a,b)=>String(b.monthKey||'').localeCompare(String(a.monthKey||'')));
+      const mergedGrades=new Map();attempts.filter(row=>row.score!==null&&row.score!==undefined&&row.score!=='').forEach(row=>mergedGrades.set(String(row.attemptId||row.id),{...row,exam:row.exam||row.examTitle||'امتحان',date:row.date||String(row.submittedAt||'').slice(0,10)}));grades.forEach(row=>mergedGrades.set(String(row.attemptId||row.id),row));
+      student.attendance=attendance;student.grades=[...mergedGrades.values()];student.homeworks=homeworks;student.recitations=recitations;student.examAttempts=attempts;
+      student.assignments=assignments.filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===student.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===student.deliveryMode)&&(!item.group||item.group==='كل المجموعات'||item.group===student.group)).slice(-100);
+      return student;
+    }
+
     function mergeStaffRecords(core,records){
       const normalized=(core.students||[]).map(normalizedStudent);const map=new Map(normalized.map(st=>[st.studentCode,st]));
       const ensure=code=>map.get(normalizeCode(code||''));
+      const mergedGrades=new Map();
+      records.attempts.filter(row=>row.score!==null&&row.score!==undefined&&row.score!=='').forEach(row=>mergedGrades.set(String(row.attemptId||row.id),{...row,exam:row.exam||row.examTitle||'امتحان',date:row.date||String(row.submittedAt||'').slice(0,10)}));
+      records.grades.forEach(row=>mergedGrades.set(String(row.attemptId||row.id),row));
       records.attendance.forEach(row=>{const st=ensure(row.studentCode||row.studentId);if(st)st.attendance.push(row);});
-      records.grades.forEach(row=>{const st=ensure(row.studentCode||row.code);if(st)st.grades.push(row);});
+      [...mergedGrades.values()].forEach(row=>{const st=ensure(row.studentCode||row.code);if(st)st.grades.push(row);});
       records.recitations.forEach(row=>{const st=ensure(row.studentCode);if(st)st.recitations.push(row);});
       records.homeworks.forEach(row=>{const st=ensure(row.studentCode);if(st)st.homeworks.push(row);});
       normalized.forEach(st=>{st.attendance.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));st.grades.sort((a,b)=>String(a.date||a.submittedAt||'').localeCompare(String(b.date||b.submittedAt||'')));});
-      return {...core,students:normalized,examAttempts:records.attempts,grades:records.grades};
+      return {...core,students:normalized,examAttempts:records.attempts,grades:[...mergedGrades.values()]};
     }
 
     async function loadStaffCollections(options={}){const core=await loadStaffCoreCollections();if(options.fast===true)return core;return mergeStaffRecords(core,await loadStaffRecordCollections());}
@@ -287,7 +326,7 @@
     async function createStudentAccessDirect(student){
       const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
       let studentCode='';
-      for(let i=0;i<12&&!studentCode;i+=1){const code=randomNumericAccessCode();const [studentPortal,parentPortal,booking]=await Promise.all([db.collection('student_portal').doc(code).get(),db.collection('parent_portal').doc(code).get(),db.collection('bookings').doc(code).get()]);if(!studentPortal.exists&&!parentPortal.exists&&!booking.exists)studentCode=code;}
+      for(let i=0;i<12&&!studentCode;i+=1){const code=randomNumericAccessCode();const [student,studentPortal,parentPortal,booking]=await Promise.all([db.collection('students').doc(code).get(),db.collection('student_portal').doc(code).get(),db.collection('parent_portal').doc(code).get(),db.collection('bookings').doc(code).get()]);if(!student.exists&&!studentPortal.exists&&!parentPortal.exists&&!booking.exists)studentCode=code;}
       const parentCode=studentCode;
       if(!studentCode)throw new Error('تعذر إنشاء كود موحد جديد');
       const source=normalizedStudent({...student,studentCode,code:studentCode,parentCode,active:student?.active!==false});
@@ -296,7 +335,8 @@
 
     async function upsertAttendance(record){
       const docId=cleanDocId(record.id||`${record.studentId||record.studentCode}_${record.date}`);
-      const payload={...record,id:docId,updatedAt:serverTime()};
+      const recordDate=record.date||nowIso();
+      const payload={...record,id:docId,date:dateKey(recordDate),monthKey:record.monthKey||monthKey(recordDate),updatedAt:serverTime()};
       await db.collection('attendance').doc(docId).set(payload,{merge:true});
       await markLeaderboardDirty('attendance');
       return {id:docId,...payload};
@@ -339,6 +379,7 @@
         academicYear:String(student.academicYear||record?.academicYear||'').slice(0,20),
         term:String(student.term||record?.term||'').slice(0,40),
         date,time:String(record?.time||'').slice(0,30),
+        monthKey:date.slice(0,7),
         title:type==='recitation'?'تسميع الحصة':'واجب الحصة',
         status:type==='recitation'?'تم التسميع':'تم عمل الواجب',
         completed:true,approved:true,method:'teacher_class_check',
@@ -364,7 +405,7 @@
       const studentRef=db.collection('students').doc(cleanDocId(studentCode));
       const studentSnap=await studentRef.get();
       const student=studentSnap.exists?studentSnap.data():normalizedStudent({...studentInput,studentCode});
-      const relatedCollections=['attendance','grades','recitations','homework_submissions','exam_attempts'];
+      const relatedCollections=['attendance','grades','recitations','homework_submissions','exam_attempts','payment_records'];
       const relatedSnaps=await Promise.all(relatedCollections.map(collection=>db.collection(collection).where('studentCode','==',studentCode).get()));
       const attemptsParent=db.collection('student_attempts').doc(cleanDocId(studentCode));
       const [attemptsSummary,attemptsChildren]=await Promise.all([attemptsParent.get(),attemptsParent.collection('attempts').get()]);
@@ -425,6 +466,33 @@
       loadStaffRecords:async()=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordCollections();},
       saveSiteData:async(payload,options={})=>syncPayloadToCollections(payload,options),
       saveStudent:async student=>{const ops=[];pushStudentOps(ops,student);await commitOperations(ops);},
+      saveMonthlyPayment:async(record,student)=>{
+        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
+        const s=normalizedStudent(student),monthKey=String(record?.monthKey||'').trim();
+        if(!s.studentCode||!/^\d{4}-\d{2}$/.test(monthKey))throw new Error('Invalid payment month');
+        const id=cleanDocId(`${s.studentCode}_${monthKey}`),paid=record?.paid===true,paymentDate=paid?String(record?.paymentDate||nowIso().slice(0,10)):'';
+        const paymentRecord={...record,id,studentCode:s.studentCode,studentName:s.name,grade:s.grade,group:s.group,deliveryMode:s.deliveryMode,monthKey,paid,paymentDate,updatedBy:profile.email||profile.uid,updatedAt:serverTime()};
+        const current={studentId:s.studentCode,studentCode:s.studentCode,studentName:s.name,grade:s.grade,group:s.group,deliveryMode:s.deliveryMode,monthKey,monthLabel:record?.monthLabel||'',paid,paymentDate};
+        const studentPatch={paid,paymentDate,currentPaymentMonth:monthKey,updatedAt:serverTime()};
+        const portalPatch={...studentPatch,studentCode:s.studentCode,parentCode:s.parentCode};
+        const ops=[
+          batch=>batch.set(db.collection('payment_records').doc(id),paymentRecord,{merge:true}),
+          batch=>batch.set(db.collection('payments').doc(cleanDocId(s.studentCode)),{...current,updatedAt:serverTime()},{merge:true}),
+          batch=>batch.set(db.collection('students').doc(cleanDocId(s.studentCode)),studentPatch,{merge:true}),
+          batch=>batch.set(db.collection('student_portal').doc(cleanDocId(s.studentCode)),portalPatch,{merge:true})
+        ];
+        if(s.parentCode)ops.push(batch=>batch.set(db.collection('parent_portal').doc(cleanDocId(s.parentCode)),portalPatch,{merge:true}));
+        await commitOperations(ops);
+        await logActivity(paid?'تم تسجيل اشتراك شهري':'تم إلغاء اشتراك شهري',{studentCode:s.studentCode,monthKey});
+        return {...paymentRecord,updatedAt:nowIso()};
+      },
+      reviewHomeworkSubmission:async(id,review)=>{
+        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
+        const patch={status:String(review?.status||'قيد المراجعة').slice(0,60),approved:review?.approved===true,score:review?.score===''||review?.score===undefined?null:Math.max(0,Math.min(100,Number(review.score))),teacherComment:String(review?.teacherComment||'').slice(0,800),reviewedBy:profile.email||profile.uid,reviewedAt:serverTime(),updatedAt:serverTime()};
+        await db.collection('homework_submissions').doc(cleanDocId(id)).set(patch,{merge:true});
+        await markLeaderboardDirty('homework-reviewed');
+        return {...patch,reviewedAt:nowIso(),updatedAt:nowIso()};
+      },
       saveGroup:async group=>{const id=cleanDocId(group?.id||'');if(!id)throw new Error('Invalid group');const profile=await getCurrentStaffProfile();if(!profile?.allowed||!['admin','teacher'].includes(profile.role))throw new Error('Not authorized');await db.collection('groups').doc(id).set({...group,id,updatedAt:serverTime()},{merge:true});return {...group,id};},
       deleteGroup:async id=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed||!['admin','teacher'].includes(profile.role))throw new Error('Not authorized');await db.collection('groups').doc(cleanDocId(id)).delete();},
       createStudentAccess:async student=>{
@@ -466,20 +534,35 @@
       startSecureExam:async(examId,studentCode)=>{if(!calls.startExam)throw new Error('Secure start exam function is unavailable');return calls.startExam({examId,studentCode:normalizeCode(studentCode)});},
       submitSecureExam:async(sessionId,studentCode,answers)=>{if(!calls.submitExam)throw new Error('Secure submit exam function is unavailable');return calls.submitExam({sessionId,studentCode:normalizeCode(studentCode),answers});},
       saveExamAttempt:async attempt=>{
-        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
+        const profile=await getCurrentStaffProfile();if(!profile?.allowed||!['admin','teacher'].includes(profile.role))throw new Error('Not authorized');
         const id=cleanDocId(attempt.id||`${attempt.examId}_${attempt.studentCode}`),studentCode=normalizeCode(attempt.studentCode||'');const ops=[];
         ops.push(batch=>batch.set(db.collection('exam_attempts').doc(id),{...attempt,id,studentCode,updatedAt:serverTime()},{merge:true}));
         if(studentCode){const parent=db.collection('student_attempts').doc(cleanDocId(studentCode));const summary={id,studentCode,examId:attempt.examId||'',examTitle:attempt.examTitle||attempt.exam||'امتحان',submittedAt:attempt.submittedAt||attempt.date||nowIso(),score:attempt.score??null,autoScore:attempt.autoScore??null,needsManualReview:attempt.needsManualReview===true,status:attempt.status||'',academicYear:attempt.academicYear||'',term:attempt.term||''};ops.push(batch=>batch.set(parent,{studentCode,lastAttempt:summary,updatedAt:serverTime()},{merge:true}));ops.push(batch=>batch.set(parent.collection('attempts').doc(id),summary,{merge:true}));}
+        if(studentCode&&attempt.score!==null&&attempt.score!==undefined&&attempt.score!==''){
+          const gradeDate=attempt.submittedAt||attempt.date||nowIso();
+          ops.push(batch=>batch.set(db.collection('grades').doc(id),{id,attemptId:id,examId:attempt.examId||'',exam:attempt.examTitle||attempt.exam||'امتحان',examTitle:attempt.examTitle||attempt.exam||'امتحان',studentCode,studentName:attempt.studentName||'',grade:attempt.grade||'',group:attempt.group||'',score:Number(attempt.score),maxScore:Number(attempt.maxScore||100),date:dateKey(gradeDate),submittedAt:gradeDate,monthKey:monthKey(gradeDate),source:'manual_exam_correction',updatedAt:serverTime()},{merge:true}));
+          ops.push(batch=>batch.set(db.collection('_system').doc('leaderboard'),{version:firebase.firestore.FieldValue.increment(1),reason:'exam-corrected',updatedAt:serverTime()},{merge:true}));
+        }
         await commitOperations(ops);
+        return {...attempt,id,studentCode};
       },
       upsertAttendance,getAttendanceForDate,
-      getStudentByCode:code=>{if(!calls.getPortalStudent)throw new Error('Secure student portal function is unavailable');return retryTransient(()=>calls.getPortalStudent({code:normalizeCode(code),mode:'student'}),1);},
+      getStudentByCode:async code=>{const normalized=normalizeCode(code);let callableError=null;if(calls.getPortalStudent){try{return await retryTransient(()=>calls.getPortalStudent({code:normalized,mode:'student'}),1);}catch(error){callableError=error;}}try{return await loadPortalStudentDirectForStaff(normalized);}catch(error){throw callableError||error||new Error('Secure student portal function is unavailable');}},
       getOnlineContentForStudent:code=>{if(!calls.getOnlineContentForStudent)throw new Error('Secure online content function is unavailable');return retryTransient(()=>calls.getOnlineContentForStudent({code:normalizeCode(code)}),1);},
       recordLectureProgress:(code,lectureId,progress)=>calls.recordLectureProgress?calls.recordLectureProgress({code:normalizeCode(code),lectureId,progress}):Promise.resolve({ok:true,progress}),
       getPublicLeaderboard:grade=>calls.getPublicLeaderboard?calls.getPublicLeaderboard({grade:String(grade||'').trim()}):Promise.resolve([]),
+      createAttendanceSession:payload=>calls.createAttendanceSession?calls.createAttendanceSession(payload):Promise.reject(new Error('Attendance session service is unavailable')),
+      claimAttendanceSession:(token,studentCode)=>calls.claimAttendanceSession?calls.claimAttendanceSession({token:String(token||''),studentCode:normalizeCode(studentCode)}):Promise.reject(new Error('Attendance claim service is unavailable')),
       getParentStudent:code=>{if(!calls.getPortalStudent)throw new Error('Secure parent portal function is unavailable');return retryTransient(()=>calls.getPortalStudent({code:normalizeCode(code),mode:'parent'}),1);},
-      uploadHomework:async(file,studentCode)=>{const normalized=normalizeCode(studentCode);if(!calls.prepareHomeworkUpload||!calls.registerHomeworkSubmission)throw new Error('Secure homework function is unavailable');const permit=await calls.prepareHomeworkUpload({studentCode:normalized,fileName:file.name,size:file.size,contentType:file.type});const uploaded=await upload(file,`homework/${cleanDocId(normalized)}/${permit.uploadId}`,permit.safeName,true);await calls.registerHomeworkSubmission({studentCode:normalized,uploadId:permit.uploadId,...uploaded,fileName:file.name});return uploaded;},
-      uploadAttachment:(file,folder)=>upload(file,folder||'teacher-uploads'),logActivity,
+      uploadHomework:async(file,studentCode,assignmentId='')=>{const normalized=normalizeCode(studentCode),assignment=String(assignmentId||'').trim();if(!calls.prepareHomeworkUpload||!calls.registerHomeworkSubmission)throw new Error('Secure homework function is unavailable');const permit=await calls.prepareHomeworkUpload({studentCode:normalized,assignmentId:assignment,fileName:file.name,size:file.size,contentType:file.type});const uploaded=await upload(file,`homework/${cleanDocId(normalized)}/${permit.uploadId}`,permit.safeName,true);await calls.registerHomeworkSubmission({studentCode:normalized,assignmentId:assignment,uploadId:permit.uploadId,...uploaded,fileName:file.name});return uploaded;},
+      // Keep every staff attachment inside the single path allowed by Storage
+      // rules.  The logical folder is preserved as a filename prefix so that
+      // question-bank, exam and assignment uploads work without widening the
+      // public storage surface.
+      uploadAttachment:(file,folder)=>{
+        const prefix=String(folder||'file').replace(/[^A-Za-z0-9_-]+/g,'-').slice(0,40)||'file';
+        return upload(file,'teacher-uploads',`${prefix}-${Date.now()}-${file.name}`);
+      },logActivity,
       reportClientError:payload=>calls.reportClientError?calls.reportClientError(payload):Promise.resolve(null),
       deleteDocument:async(collection,id)=>{if(collection&&id)await db.collection(collection).doc(cleanDocId(id)).delete();},
       deleteStudentSafely:async student=>{
@@ -496,14 +579,14 @@
         const oldId=cleanDocId(normalizeCode(oldCode)),newId=cleanDocId(normalizeCode(newCode));if(!oldId||!newId||oldId===newId)return;
         const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
         const oldAttempts=db.collection('student_attempts').doc(oldId),newAttempts=db.collection('student_attempts').doc(newId);
-        const [summary,summaryDocs,attempts,grades,attendance,homeworks,recitations]=await Promise.all([
+        const [summary,summaryDocs,attempts,grades,attendance,homeworks,recitations,paymentRecords]=await Promise.all([
           oldAttempts.get().catch(()=>null),oldAttempts.collection('attempts').get().catch(()=>null),db.collection('exam_attempts').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),
           db.collection('grades').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('attendance').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),
-          db.collection('homework_submissions').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('recitations').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null)
+          db.collection('homework_submissions').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('recitations').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('payment_records').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null)
         ]);
         const ops=[];if(summary?.exists)ops.push(batch=>batch.set(newAttempts,{...summary.data(),studentCode:normalizeCode(newCode),updatedAt:serverTime()},{merge:true}));
         summaryDocs?.forEach(doc=>{ops.push(batch=>batch.set(newAttempts.collection('attempts').doc(doc.id),{...doc.data(),studentCode:normalizeCode(newCode)},{merge:true}));ops.push(batch=>batch.delete(doc.ref));});if(summary?.exists)ops.push(batch=>batch.delete(summary.ref));
-        [attempts,grades,attendance,homeworks,recitations].forEach(snap=>snap?.forEach(doc=>ops.push(batch=>batch.update(doc.ref,{studentCode:normalizeCode(newCode),updatedAt:serverTime()}))));
+        [attempts,grades,attendance,homeworks,recitations,paymentRecords].forEach(snap=>snap?.forEach(doc=>ops.push(batch=>batch.update(doc.ref,{studentCode:normalizeCode(newCode),updatedAt:serverTime()}))));
         ops.push(batch=>batch.delete(db.collection('students').doc(oldId)));ops.push(batch=>batch.delete(db.collection('student_portal').doc(oldId)));ops.push(batch=>batch.delete(db.collection('parent_portal').doc(oldId)));ops.push(batch=>batch.delete(db.collection('payments').doc(oldId)));if(student)pushStudentOps(ops,student);await commitOperations(ops);
       },
       getActivityLog:async(limit=50)=>{const snap=await db.collection('activityLog').orderBy('createdAt','desc').limit(Math.min(Number(limit)||50,200)).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));},

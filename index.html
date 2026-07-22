@@ -15,16 +15,18 @@
 <link href="assets/icon-192.png" rel="icon" type="image/png"/>
 <link href="assets/icon-192.png" rel="apple-touch-icon"/>
 <link href="site.webmanifest" rel="manifest"/>
-<link href="assets/site.css?v=56.15.0" rel="stylesheet"/>
-<link href="assets/v55.css?v=56.15.0" rel="stylesheet"/>
-<link href="assets/v56.css?v=56.15.0" rel="stylesheet"/>
-<link href="assets/v57.css?v=57" rel="stylesheet"/>
+<link href="assets/site.css?v=63.2.0" rel="stylesheet"/>
+<link href="assets/v55.css?v=63.2.0" rel="stylesheet"/>
+<link href="assets/v56.css?v=63.2.0" rel="stylesheet"/>
+<link href="assets/v57.css?v=63.2.0" rel="stylesheet"/>
+<link href="assets/v59.css?v=63.2.0" rel="stylesheet"/>
+<link href="assets/v60.css?v=63.2.0" rel="stylesheet"/>
 </head>
 <body id="top">
 <header class="site-header">
 <div class="container navbar">
 <a aria-label="الأستاذ سعد عويضة" class="logo" href="#home">
-<span class="logo-mark" data-icon="atom"></span>
+<img class="site-brand-logo" src="assets/icon-192.png" width="52" height="52" alt="لوجو منصة الأستاذ سعد عويضة">
 <span>الأستاذ سعد عويضة <small>أحياء • علوم • علوم متكاملة</small></span>
 </a>
 <nav aria-label="روابط الموقع" class="navlinks">
@@ -67,6 +69,7 @@
 <div class="floating-card three">متابعة مستمرة</div>
 <div class="teacher-photo"><img alt="الأستاذ سعد عويضة" src="assets/teacher.webp" width="1000" height="991" decoding="async" fetchpriority="high"/></div>
 </div>
+<div class="hero-social-actions"><a class="btn ghost" href="tel:01097163200"><span data-icon="phone"></span> اتصال</a><a class="btn ghost" href="https://wa.me/201097163200" target="_blank" rel="noreferrer"><span data-icon="send"></span> واتساب</a><a class="btn ghost" href="https://www.facebook.com/saad.abomoaz" target="_blank" rel="noreferrer"><span data-icon="facebook"></span> فيسبوك</a></div>
 </div>
 </section>
 <section class="v56-learning-journey" aria-label="رحلة الطالب داخل المنصة">
@@ -123,6 +126,7 @@
 <button class="btn primary booking-next" type="button" data-booking-next><span data-icon="external-link"></span> التالي: اختار الموعد</button>
 </div>
 <div class="booking-step" data-booking-step="2">
+<div class="field booking-mode-field"><label>نظام الدراسة</label><select id="bookingDeliveryMode" name="deliveryMode" required><option value="center">مجموعة في السنتر</option><option value="online">أونلاين</option></select><small class="field-hint">اختار طريقة الدراسة لعرض مواعيدها فقط.</small></div>
 <div class="field"><label>الصف الدراسي</label><select id="bookingGrade" name="grade" required=""></select></div>
 <div class="field"><label>شهر الاشتراك</label><select id="bookingMonth" name="month" required=""></select></div>
 <div class="field"><label>الترم</label><select id="bookingTerm" name="term" required=""></select></div>
@@ -175,7 +179,8 @@
 <h2 class="section-title">تواصل واحجز بسهولة</h2>
 <p class="section-desc">للاستفسار أو المتابعة، تواصل من الروابط الرسمية أو اترك الحجز من النموذج داخل الموقع.</p>
 <div class="hero-cta">
-<a class="btn primary" href="#" id="teacherWhatsapp"><span data-icon="send"></span> اتصل الآن</a>
+<a class="btn primary" href="#" id="teacherWhatsapp"><span data-icon="send"></span> واتساب الأستاذ</a>
+<a class="btn ghost" href="tel:01097163200" id="teacherCall"><span data-icon="phone"></span> اتصل الآن</a>
 <a class="btn ghost" href="https://www.facebook.com/saad.abomoaz" rel="noreferrer" target="_blank"><span data-icon="facebook"></span> صفحة الأستاذ سعد</a>
 </div>
 </div>
@@ -212,10 +217,10 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
-<script defer src="assets/firebase-config.js?v=56.15.0"></script>
-<script defer src="assets/firebase-sync.js?v=56.15.0"></script>
-<script defer src="assets/app.js?v=56.15.1"></script>
-<script defer src="assets/v53-upgrades.js?v=56.15.0"></script>
-<script defer src="assets/v56-fixes.js?v=56.15.0"></script>
+<script defer src="assets/firebase-config.js?v=63.2.0"></script>
+<script defer src="assets/firebase-sync.js?v=63.2.0"></script>
+<script defer src="assets/app.js?v=63.2.0"></script>
+<script defer src="assets/v53-upgrades.js?v=63.2.0"></script>
+<script defer src="assets/v56-fixes.js?v=63.2.0"></script>
 </body>
 </html>

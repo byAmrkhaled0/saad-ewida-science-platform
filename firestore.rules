@@ -73,10 +73,12 @@ service cloud.firestore {
       allow update, delete: if isTeacher();
     }
 
-    match /materials/{id} { allow read: if true; allow write: if isTeacher(); }
-    match /questions/{id} { allow read: if true; allow write: if isTeacher(); }
-    match /groups/{id} { allow read: if true; allow write: if isTeacher(); }
-    match /assignments/{id} { allow read: if true; allow write: if isTeacher(); }
+    // Public resource pages receive a sanitized payload from getPublicResources.
+    // Direct document reads stay closed so subscriber links cannot be scraped.
+    match /materials/{id} { allow read: if isStaff(); allow write: if isTeacher(); }
+    match /questions/{id} { allow read: if isStaff(); allow write: if isTeacher(); }
+    match /groups/{id} { allow read: if !('active' in resource.data) || resource.data.active != false || isStaff(); allow write: if isTeacher(); }
+    match /assignments/{id} { allow read: if isStaff(); allow write: if isTeacher(); }
     match /exams/{id} { allow read, write: if isTeacher(); }
 
     match /exam_sessions/{id} { allow read, write: if false; }
@@ -119,6 +121,7 @@ service cloud.firestore {
     }
     match /grades/{id} { allow read: if isStaff(); allow create, update, delete: if isTeacher(); }
     match /payments/{id} { allow read, create, update: if isStaff(); allow delete: if isTeacher(); }
+    match /payment_records/{id} { allow read, create, update: if isStaff(); allow delete: if isTeacher(); }
     match /reports/{id} { allow read, create, update: if isStaff(); allow delete: if isTeacher(); }
     match /activityLog/{id} { allow read, create: if isStaff(); allow update, delete: if isAdmin(); }
     match /client_errors/{id} { allow read, delete: if isTeacher(); allow create, update: if false; }
@@ -135,6 +138,7 @@ service cloud.firestore {
     match /_rate_limits/{id} { allow read, write: if false; }
     match /_booking_requests/{id} { allow read, write: if false; }
     match /_homework_upload_tokens/{id} { allow read, write: if false; }
+    match /attendance_sessions/{id} { allow read, write: if false; }
     match /deleted_students/{id} { allow read, write: if false; }
     match /backup_runs/{id} { allow read, write: if false; }
     match /staff_push_tokens/{id} { allow read, write: if false; }

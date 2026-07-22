@@ -1,41 +1,17 @@
-const CACHE_NAME = "mf-science-v580-production-auth-seo";
+const CACHE_NAME = "mf-science-v632-production";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
-  "/terms.html", "/offline.html", "/assets/site.css", "/assets/v55.css",
-  "/assets/v56.css", "/assets/v57.css", "/assets/app.js", "/assets/online.js", "/assets/firebase-sync.js",
-  "/assets/firebase-config.js", "/assets/v53-upgrades.js",
-  "/assets/v56-fixes.js", "/assets/logo-icon.svg", "/assets/icon-192.png",
+  "/terms.html", "/offline.html", "/assets/platform.css", "/assets/platform.js",
+  "/assets/online.js", "/assets/firebase-sync.js", "/assets/firebase-config.js",
+  "/assets/logo-icon.svg", "/assets/icon-192.png",
   "/assets/icon-512.png", "/assets/icon-maskable-512.png",
-  "/assets/teacher.webp", "/assets/saad-promo.webp", "/assets/saad-event.webp", "/site.webmanifest"
+  "/assets/teacher.webp", "/assets/saad-promo.webp", "/site.webmanifest"
 ];
 
-// Firebase Messaging shares the same service worker as the PWA, avoiding a
-// second worker with a conflicting root scope.
-try {
-  importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
-  importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
-  firebase.initializeApp({
-    apiKey:'AIzaSyDG5LHrXBeyKFaN1Tmq5HjOX-nOv2z_BBA',
-    authDomain:'saad-ewida-science-platform.firebaseapp.com',
-    projectId:'saad-ewida-science-platform',
-    storageBucket:'saad-ewida-science-platform.firebasestorage.app',
-    messagingSenderId:'459812644202',
-    appId:'1:459812644202:web:0b02982aab7f74fdcf7113'
-  });
-  firebase.messaging().onBackgroundMessage(payload => {
-    const notification = payload.notification || payload.data || {};
-    self.registration.showNotification(notification.title || 'حجز جديد', {
-      body: notification.body || 'تم تسجيل حجز طالب جديد',
-      icon: '/assets/icon-192.png',
-      badge: '/assets/icon-192.png',
-      data: { url: '/teacher-login.html?section=bookings' },
-      tag: `booking-${payload.data?.bookingCode || Date.now()}`
-    });
-  });
-} catch (error) {
-  console.warn('Firebase Messaging is unavailable', error);
-}
+// Background Messaging is intentionally not imported from a third-party CDN
+// here. The public VAPID key is not configured yet, and a failed importScripts
+// used to make the PWA worker noisy and unreliable on restricted networks.
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();

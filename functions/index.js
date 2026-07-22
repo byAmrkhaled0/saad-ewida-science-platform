@@ -14,9 +14,23 @@ setGlobalOptions({ region: 'europe-west1', maxInstances: 10, memory: '256MiB' })
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
+const QRCode = require('qrcode');
+const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
 // Callable endpoints must accept the browser's unauthenticated CORS preflight.
 // Sensitive operations still enforce staff authentication inside each handler.
-const CALLABLE_OPTIONS = { region: 'europe-west1', timeoutSeconds: 30, invoker: 'public' };
+const WEB_CORS_ORIGINS = [
+  /^https:\/\/.*\.vercel\.app$/,
+  'https://saad-ewida-science-platform.web.app',
+  'https://saad-ewida-science-platform.firebaseapp.com',
+  /^http:\/\/localhost(?::\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(?::\d+)?$/
+];
+const CALLABLE_OPTIONS = {
+  region: 'europe-west1',
+  timeoutSeconds: 30,
+  invoker: 'public',
+  cors: WEB_CORS_ORIGINS
+};
 
 function cleanDocId(value) {
   return String(value || '').trim().replace(/[\\/#?\[\]]/g, '-');
@@ -274,12 +288,16 @@ function mcqCorrect(question, chosenIndex) {
 }
 
 function portalResponse(data, attempts, records = {}) {
+  const mergedGrades = new Map();
+  (Array.isArray(attempts) ? attempts : []).filter(item => item.score !== null && item.score !== undefined && item.score !== '').forEach(item => mergedGrades.set(String(item.attemptId || item.id), { ...item, exam: item.exam || item.examTitle || 'امتحان', date: item.date || text(item.submittedAt, 10) }));
+  (Array.isArray(records.grades) ? records.grades : []).forEach(item => mergedGrades.set(String(item.attemptId || item.id), item));
   return {
     studentCode: text(data.studentCode || data.code, 40),
     name: text(data.studentName || data.name, 100),
     studentName: text(data.studentName || data.name, 100),
     grade: text(data.grade, 80),
     group: text(data.group, 100),
+    deliveryMode: data.deliveryMode === 'online' ? 'online' : 'center',
     month: text(data.month, 40),
     academicYear: text(data.academicYear, 20),
     term: text(data.term, 40),
@@ -290,9 +308,14 @@ function portalResponse(data, attempts, records = {}) {
     scheduleEndTime: text(data.scheduleEndTime, 20),
     paid: data.paid === true,
     paymentDate: text(data.paymentDate, 40),
+    currentPaymentMonth: text(data.currentPaymentMonth, 20),
+    paymentHistory: Array.isArray(records.payments) ? records.payments.slice(-36).reverse().map(item=>({
+      id:text(item.id,120),monthKey:text(item.monthKey,20),monthLabel:text(item.monthLabel,40),paid:item.paid===true,
+      paymentDate:text(item.paymentDate,40),amount:Number(item.amount||0),method:text(item.method,40),notes:text(item.notes,300)
+    })) : [],
     notes: text(data.notes, 1500),
     attendance: Array.isArray(records.attendance) ? records.attendance.slice(-120) : (Array.isArray(data.attendance) ? data.attendance.slice(-120) : []),
-    grades: Array.isArray(records.grades) ? records.grades.slice(-120) : (Array.isArray(data.grades) ? data.grades.slice(-120) : []),
+    grades: mergedGrades.size ? [...mergedGrades.values()].sort((a,b)=>String(a.date||a.submittedAt||'').localeCompare(String(b.date||b.submittedAt||''))).slice(-120) : (Array.isArray(data.grades) ? data.grades.slice(-120) : []),
     homeworks: Array.isArray(records.homeworks) ? records.homeworks.slice(-120) : (Array.isArray(data.homeworks) ? data.homeworks.slice(-120) : []),
     recitations: Array.isArray(records.recitations) ? records.recitations.slice(-120) : (Array.isArray(data.recitations) ? data.recitations.slice(-120) : []),
     examAttempts: Array.isArray(attempts) ? attempts.slice(-120) : []
@@ -307,7 +330,9 @@ async function getStudentPortalByCode(code) {
   const portalSnap = await portalRef.get();
   if (portalSnap.exists) {
     if (portalSnap.data().active === false) throw new HttpsError('not-found', 'حساب الطالب غير نشط.');
-    return { code: normalized, data: portalSnap.data() };
+    const canonicalSnap = await db.collection('students').doc(id).get().catch(() => null);
+    const canonical = canonicalSnap?.exists ? canonicalSnap.data() : {};
+    return { code: normalized, data: { ...portalSnap.data(), ...canonical, studentCode: normalized, code: normalized } };
   }
   // Older releases sometimes created the student record before the dedicated
   // portal document. Keep those real accounts working and repair them lazily.
@@ -353,11 +378,11 @@ async function studentRecords(studentCode) {
     const snap = await db.collection(collection).where('studentCode', '==', normalized).limit(250).get().catch(() => null);
     return snap ? snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
   };
-  const [attendance, grades, homeworks, recitations] = await Promise.all([
-    load('attendance'), load('grades'), load('homework_submissions'), load('recitations')
+  const [attendance, grades, homeworks, recitations, payments] = await Promise.all([
+    load('attendance'), load('grades'), load('homework_submissions'), load('recitations'), load('payment_records')
   ]);
   const byDate = rows => rows.sort((a, b) => String(a.date || a.submittedAt || a.createdAt || '').localeCompare(String(b.date || b.submittedAt || b.createdAt || '')));
-  return { attendance: byDate(attendance), grades: byDate(grades), homeworks: byDate(homeworks), recitations: byDate(recitations) };
+  return { attendance: byDate(attendance), grades: byDate(grades), homeworks: byDate(homeworks), recitations: byDate(recitations), payments: payments.sort((a,b)=>String(a.monthKey||'').localeCompare(String(b.monthKey||''))) };
 }
 
 exports.getPortalStudent = onCall(CALLABLE_OPTIONS, async request => {
@@ -366,28 +391,82 @@ exports.getPortalStudent = onCall(CALLABLE_OPTIONS, async request => {
   await rateLimitPublic(`portal-${mode}`, code, request, 8, 35, 60 * 1000);
   const found = mode === 'parent' ? await getParentPortalByCode(code) : await getStudentPortalByCode(code);
   const studentCode = found.data.studentCode || found.data.code;
-  const [attempts, records] = await Promise.all([attemptSummaries(studentCode), studentRecords(studentCode)]);
-  return portalResponse(found.data, attempts, records);
+  const [attempts, records, assignmentSnap, monthlyRows, onlineContent] = await Promise.all([
+    attemptSummaries(studentCode),
+    studentRecords(studentCode),
+    db.collection('assignments').limit(300).get().catch(()=>null),
+    getMonthlyLeaderboardRows(),
+    loadOnlineContentForStudent(found.data, studentCode)
+  ]);
+  const studentMode = found.data.deliveryMode === 'online' ? 'online' : 'center';
+  const assignments = assignmentSnap ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===found.data.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===studentMode)&&(!item.group||item.group==='كل المجموعات'||item.group===found.data.group)).slice(-100) : [];
+  const monthKey = cairoDateKey(new Date()).slice(0, 7);
+  const grade = text(found.data.grade, 50);
+  const monthlyIncentive = monthlyRows.find(row => row.studentCode === normalizeCode(studentCode)) || {
+    studentCode: normalizeCode(studentCode), monthKey, grade, rank: null, score: 0,
+    attendancePct: 0, gradePct: 0, homeworkPct: 0, recitationPct: 0, activity: 0,
+    participants: monthlyRows.filter(row => row.grade === grade).length
+  };
+  return { ...portalResponse(found.data, attempts, records), assignments, onlineContent, monthlyIncentive };
 });
+
+exports.getPublicResources = onCall(CALLABLE_OPTIONS, async request => {
+  await rateLimit('public-resources-ip', requestIp(request), 80, 60 * 1000);
+  const [materialsSnap, questionsSnap] = await Promise.all([
+    db.collection('materials').limit(500).get(),
+    db.collection('questions').limit(1000).get()
+  ]);
+  const publicTarget = item => item.active !== false
+    && item.deliveryMode !== 'online'
+    && item.access !== 'subscribers';
+  const resourcePayload = item => ({
+    id: text(item.id, 120),
+    title: text(item.title, 220),
+    desc: text(item.desc || item.content, 1200),
+    content: text(item.content, 3000),
+    answer: text(item.answer, 3000),
+    grade: text(item.grade || 'كل الصفوف', 80),
+    deliveryMode: item.deliveryMode === 'center' ? 'center' : 'all',
+    contentType: text(item.contentType, 30),
+    term: text(item.term, 40),
+    unit: text(item.unit, 120),
+    chapter: text(item.chapter, 120),
+    fileName: text(item.fileName, 180),
+    fileType: text(item.fileType, 100),
+    fileUrl: safePublicUrl(item.fileUrl || item.url),
+    linkUrl: safePublicUrl(item.linkUrl),
+    coverUrl: safePublicUrl(item.coverUrl)
+  });
+  return {
+    materials: materialsSnap.docs.map(doc => ({ id:doc.id, ...doc.data() })).filter(publicTarget).map(resourcePayload),
+    questions: questionsSnap.docs.map(doc => ({ id:doc.id, ...doc.data() })).filter(publicTarget).map(resourcePayload)
+  };
+});
+
+async function loadOnlineContentForStudent(student = {}, code = '') {
+  const snap = await db.collection('materials').limit(300).get();
+  const progressSnap = await db.collection('lecture_progress').where('studentCode', '==', code).limit(300).get().catch(() => null);
+  const progress = new Map(progressSnap ? progressSnap.docs.map(doc => [String(doc.data().lectureId || ''), Number(doc.data().progress || 0)]) : []);
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(item => ['live','upcoming','recording','file'].includes(item.contentType))
+    .filter(item => item.active !== false)
+    .filter(item => item.deliveryMode === 'online')
+    .filter(item => !item.grade || item.grade === 'كل الصفوف' || item.grade === student.grade)
+    .filter(item => !item.term || !student.term || item.term === student.term)
+    .filter(item => (item.access || 'subscribers') !== 'subscribers' || student.paid === true)
+    .map(item => ({
+      id: text(item.id, 120), title: text(item.title, 220), desc: text(item.desc, 800), contentType: text(item.contentType, 30),
+      grade: text(item.grade, 80), term: text(item.term, 40), unit: text(item.unit, 120), chapter: text(item.chapter, 120),
+      startAt: text(item.startAt, 60), duration: Number(item.duration || 120), access: text(item.access, 30),
+      coverUrl: safePublicUrl(item.coverUrl), linkUrl: safePublicUrl(item.linkUrl || item.fileUrl), progress: progress.get(String(item.id)) || 0
+    }));
+}
 
 exports.getOnlineContentForStudent = onCall(CALLABLE_OPTIONS, async request => {
   const code = normalizeCode(request.data && request.data.code);
   await rateLimitPublic('online-content', code, request, 12, 45, 60 * 1000);
   const found = await getStudentPortalByCode(code);
-  const student = found.data || {};
-  const snap = await db.collection('materials').limit(300).get();
-  const progressSnap = await db.collection('lecture_progress').where('studentCode', '==', code).limit(300).get().catch(() => null);
-  const progress = new Map(progressSnap ? progressSnap.docs.map(doc => [String(doc.data().lectureId || ''), Number(doc.data().progress || 0)]) : []);
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    .filter(item => ['upcoming','recording','file'].includes(item.contentType))
-    .filter(item => !item.grade || item.grade === 'كل الصفوف' || item.grade === student.grade)
-    .filter(item => item.access !== 'subscribers' || student.paid === true)
-    .map(item => ({
-      id: text(item.id, 120), title: text(item.title, 220), desc: text(item.desc, 800), contentType: text(item.contentType, 30),
-      grade: text(item.grade, 80), term: text(item.term, 40), unit: text(item.unit, 120), chapter: text(item.chapter, 120),
-      startAt: text(item.startAt, 60), duration: Number(item.duration || 120), access: text(item.access, 30),
-      coverUrl: text(item.coverUrl, 1500), linkUrl: text(item.linkUrl || item.fileUrl, 2000), progress: progress.get(String(item.id)) || 0
-    }));
+  return loadOnlineContentForStudent(found.data || {}, code);
 });
 
 exports.recordLectureProgress = onCall(CALLABLE_OPTIONS, async request => {
@@ -417,7 +496,7 @@ async function markLeaderboardDirty(reason = 'activity') {
 
 function cairoDateKey(value = new Date()) {
   let date;
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   if (value && typeof value.toDate === 'function') date = value.toDate();
   else date = value instanceof Date ? value : new Date(value);
   if (!date || Number.isNaN(date.getTime())) return '';
@@ -431,41 +510,166 @@ function leaderboardRecordDate(row = {}) {
   return cairoDateKey(row.date || row.submittedAt || row.createdAt || row.updatedAt || '');
 }
 
+function nextMonthKey(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month, 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function loadMonthlyCollection(collectionName, monthKey) {
+  const nextMonth = nextMonthKey(monthKey);
+  const [year, month] = monthKey.split('-').map(Number);
+  const timestampStart = Timestamp.fromMillis(Date.UTC(year, month - 1, 1) - 24 * 60 * 60 * 1000);
+  const timestampEnd = Timestamp.fromMillis(Date.UTC(year, month, 1) + 24 * 60 * 60 * 1000);
+  const specs = [
+    query => query.where('monthKey', '==', monthKey),
+    query => query.where('date', '>=', `${monthKey}-01`).where('date', '<', `${nextMonth}-01`),
+    query => query.where('submittedAt', '>=', `${monthKey}-01`).where('submittedAt', '<', `${nextMonth}-01`),
+    query => query.where('createdAt', '>=', timestampStart).where('createdAt', '<', timestampEnd)
+  ];
+  const results = await Promise.all(specs.map(async makeQuery => {
+    try {
+      const snap = await makeQuery(db.collection(collectionName)).get();
+      return { ok: true, docs: snap.docs };
+    } catch (error) {
+      console.warn('monthly-query-failed', collectionName, error?.message || error);
+      return { ok: false, docs: [] };
+    }
+  }));
+  let docs = results.flatMap(result => result.docs);
+  if (!results.some(result => result.ok)) {
+    const fallback = await db.collection(collectionName).limit(3000).get();
+    docs = fallback.docs;
+  }
+  const unique = new Map(docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }]));
+  return [...unique.values()].filter(row => leaderboardRecordDate(row).slice(0, 7) === monthKey);
+}
+
+async function getMonthlyLeaderboardRows() {
+  const stateSnap = await leaderboardStateRef.get().catch(() => null);
+  const stateVersion = stateSnap?.exists ? Number(stateSnap.data()?.version || 0) : 0;
+  if (leaderboardCache.expiresAt > Date.now() && leaderboardCache.version === stateVersion) return leaderboardCache.rows;
+  const monthKey = cairoDateKey(new Date()).slice(0, 7);
+  const [studentsSnap, attendanceRows, gradeRows, attemptRows, homeworkRows, recitationRows] = await Promise.all([
+    db.collection('students').where('active', '==', true).get(),
+    loadMonthlyCollection('attendance', monthKey),
+    loadMonthlyCollection('grades', monthKey),
+    loadMonthlyCollection('exam_attempts', monthKey),
+    loadMonthlyCollection('homework_submissions', monthKey),
+    loadMonthlyCollection('recitations', monthKey)
+  ]);
+  const grouped = rows => {
+    const map = new Map();
+    rows.forEach(row => {
+      const code = normalizeCode(row.studentCode);
+      if (!code) return;
+      if (!map.has(code)) map.set(code, []);
+      map.get(code).push(row);
+    });
+    return map;
+  };
+  const mergedGrades = new Map();
+  attemptRows.forEach(row => mergedGrades.set(String(row.attemptId || row.id), row));
+  gradeRows.forEach(row => mergedGrades.set(String(row.attemptId || row.id), row));
+  const attendance = grouped(attendanceRows), grades = grouped([...mergedGrades.values()]), homeworks = grouped(homeworkRows), recitations = grouped(recitationRows);
+  let rows = studentsSnap.docs.map(doc => {
+    const student = doc.data() || {};
+    const studentCode = normalizeCode(student.studentCode || student.code || doc.id);
+    const metrics = calculateMonthlyMetrics({
+      studentCode,
+      monthKey,
+      attendance: attendance.get(studentCode) || student.attendance || [],
+      grades: grades.get(studentCode) || student.grades || [],
+      homeworks: homeworks.get(studentCode) || student.homeworks || [],
+      recitations: recitations.get(studentCode) || student.recitations || []
+    });
+    return { ...metrics, name: publicStudentName(student.studentName || student.name), grade: text(student.grade, 50) };
+  }).filter(row => row.name && row.activity > 0)
+    .sort((a, b) => b.score - a.score || b.attendancePct - a.attendancePct || b.gradePct - a.gradePct || a.name.localeCompare(b.name, 'ar'));
+  const gradeRanks = new Map(), gradeCounts = new Map();
+  rows.forEach(row => gradeCounts.set(row.grade, (gradeCounts.get(row.grade) || 0) + 1));
+  rows = rows.map(row => {
+    const rank = (gradeRanks.get(row.grade) || 0) + 1;
+    gradeRanks.set(row.grade, rank);
+    return { ...row, rank, participants: gradeCounts.get(row.grade) || 0 };
+  });
+  leaderboardCache = { expiresAt: Date.now() + 5 * 60 * 1000, version: stateVersion, rows };
+  return rows;
+}
+
 exports.getPublicLeaderboard = onCall(CALLABLE_OPTIONS, async request => {
   // The old shared identity "all" imposed one 30-request limit on the whole
   // website. Limit per visitor IP instead so simultaneous students can load it.
   await rateLimit('public-leaderboard-ip', requestIp(request), 60, 60 * 1000);
-  const stateSnap = await leaderboardStateRef.get().catch(() => null);
-  const stateVersion = stateSnap?.exists ? Number(stateSnap.data()?.version || 0) : 0;
   const requestedGrade = text(request.data?.grade, 50);
-  const selectGradeLeaders = items => (items || []).filter(row => row.grade === requestedGrade).slice(0, 5);
-  if (leaderboardCache.expiresAt > Date.now() && leaderboardCache.version === stateVersion) return selectGradeLeaders(leaderboardCache.rows);
-  const [studentsSnap, attendanceSnap, gradesSnap, homeworkSnap, recitationSnap] = await Promise.all([
-    db.collection('students').where('active', '==', true).limit(500).get(),
-    db.collection('attendance').limit(2000).get(),
-    db.collection('grades').limit(2000).get(),
-    db.collection('homework_submissions').limit(2000).get(),
-    db.collection('recitations').limit(2000).get()
-  ]);
-  const grouped = snap => { const map = new Map(); snap.docs.forEach(doc => { const row=doc.data()||{},code=normalizeCode(row.studentCode); if(!code)return; if(!map.has(code))map.set(code,[]); map.get(code).push(row); }); return map; };
-  const attendance=grouped(attendanceSnap),grades=grouped(gradesSnap),homeworks=grouped(homeworkSnap),recitations=grouped(recitationSnap);
-  const complete=row=>row.completed===true||row.approved===true||String(row.status||'').startsWith('تم');
-  const currentMonth=cairoDateKey(new Date()).slice(0,7);
-  const currentMonthRows=items=>(items||[]).filter(row=>leaderboardRecordDate(row).slice(0,7)===currentMonth);
-  const recordDate=leaderboardRecordDate;
-  const rows=studentsSnap.docs.map(doc=>{
-    const st=doc.data()||{},code=normalizeCode(st.studentCode||st.code||doc.id);
-    const att=currentMonthRows(attendance.get(code)||st.attendance||[]),present=att.filter(x=>['present','حاضر','متأخر'].includes(x.status)).length,attendancePct=att.length?Math.round(present/att.length*100):0;
-    const gradeRows=currentMonthRows(grades.get(code)||st.grades||[]).filter(x=>Number.isFinite(Number(x.score))),gradePct=gradeRows.length?Math.round(gradeRows.reduce((sum,x)=>sum+Number(x.score),0)/gradeRows.length):0;
-    const hw=currentMonthRows(homeworks.get(code)||st.homeworks||[]).filter(complete),rec=currentMonthRows(recitations.get(code)||st.recitations||[]).filter(complete);
-    const classDates=new Set(att.map(recordDate).filter(Boolean));hw.forEach(row=>{const date=recordDate(row);if(date)classDates.add(date);});rec.forEach(row=>{const date=recordDate(row);if(date)classDates.add(date);});
-    const sessions=classDates.size,completedDates=items=>new Set(items.map(recordDate).filter(Boolean)).size;
-    const homeworkPct=sessions?Math.min(100,Math.round(completedDates(hw)/sessions*100)):0,recitationPct=sessions?Math.min(100,Math.round(completedDates(rec)/sessions*100)):0;
-    const score=Math.round(attendancePct*.30+gradePct*.40+homeworkPct*.15+recitationPct*.15);
-    return {name:publicStudentName(st.studentName||st.name),grade:text(st.grade,50),score,attendancePct,gradePct,homeworkPct,recitationPct,activity:att.length+gradeRows.length+hw.length+rec.length};
-  }).filter(x=>x.name&&x.activity>0).sort((a,b)=>b.score-a.score||b.attendancePct-a.attendancePct||b.gradePct-a.gradePct);
-  leaderboardCache = { expiresAt: Date.now() + 5 * 60 * 1000, version: stateVersion, rows };
-  return selectGradeLeaders(rows);
+  const rows = await getMonthlyLeaderboardRows();
+  return rows.filter(row => row.grade === requestedGrade).slice(0, 5).map(row => {
+    const { studentCode, activity, participants, ...publicRow } = row;
+    return publicRow;
+  });
+});
+
+exports.createAttendanceSession = onCall(CALLABLE_OPTIONS, async request => {
+  const staff = await requireStaff(request, ['admin', 'teacher']);
+  const body = request.data || {};
+  const scheduleId = cleanDocId(text(body.scheduleId, 100));
+  const grade = text(body.grade, 80);
+  const group = text(body.group, 100);
+  const deliveryMode = body.deliveryMode === 'online' ? 'online' : 'center';
+  if (deliveryMode !== 'online') throw new HttpsError('invalid-argument', 'باركود الشاشة مخصص لحصص الأونلاين.');
+  if (!grade || !group) throw new HttpsError('invalid-argument', 'اختر الصف وموعد الأونلاين أولًا.');
+  if (scheduleId) {
+    const scheduleSnap = await db.collection('groups').doc(scheduleId).get();
+    if (!scheduleSnap.exists) throw new HttpsError('not-found', 'موعد الأونلاين غير موجود.');
+    const schedule = scheduleSnap.data() || {};
+    if (schedule.active === false || schedule.deliveryMode !== 'online' || text(schedule.grade, 80) !== grade || text(schedule.name, 100) !== group) {
+      throw new HttpsError('failed-precondition', 'بيانات موعد الأونلاين غير متطابقة.');
+    }
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  const sessionId = hash(token).slice(0, 40);
+  const expiresAt = Timestamp.fromMillis(Date.now() + 30 * 60 * 1000);
+  const attendanceDate = cairoDateKey(new Date());
+  await db.collection('attendance_sessions').doc(sessionId).set({
+    sessionId, tokenHash: hash(token), scheduleId, grade, group, deliveryMode,
+    attendanceDate, active: true, createdBy: staff.uid, createdAt: FieldValue.serverTimestamp(), expiresAt
+  });
+  const baseUrl = safePublicUrl(body.baseUrl) || 'https://saad-ewida-science-platform.vercel.app/student.html';
+  const attendanceUrl = `${baseUrl.split('?')[0]}?attendance=${encodeURIComponent(token)}`;
+  const qrDataUrl = await QRCode.toDataURL(attendanceUrl, { width: 720, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#0f4f42', light: '#ffffff' } });
+  return { sessionId, attendanceUrl, qrDataUrl, grade, group, expiresAt: expiresAt.toDate().toISOString() };
+});
+
+exports.claimAttendanceSession = onCall(CALLABLE_OPTIONS, async request => {
+  const body = request.data || {};
+  const token = text(body.token, 100);
+  const studentCode = normalizeCode(body.studentCode);
+  await rateLimitPublic('attendance-claim', `${studentCode}:${hash(token).slice(0,12)}`, request, 6, 80, 60 * 1000);
+  if (!/^[a-f0-9]{48}$/.test(token) || !validLegacyOrStrongCode(studentCode)) throw new HttpsError('invalid-argument', 'بيانات تسجيل الحضور غير صحيحة.');
+  const sessionRef = db.collection('attendance_sessions').doc(hash(token).slice(0, 40));
+  const studentRef = db.collection('students').doc(cleanDocId(studentCode));
+  return db.runTransaction(async tx => {
+    const [sessionSnap, studentSnap] = await Promise.all([tx.get(sessionRef), tx.get(studentRef)]);
+    if (!sessionSnap.exists) throw new HttpsError('not-found', 'باركود الحضور غير صالح.');
+    const session = sessionSnap.data() || {}, student = studentSnap.exists ? studentSnap.data() : null;
+    if (!student || student.active === false) throw new HttpsError('not-found', 'حساب الطالب غير موجود أو غير نشط.');
+    if (session.active === false || session.tokenHash !== hash(token) || session.expiresAt?.toMillis() < Date.now()) throw new HttpsError('deadline-exceeded', 'انتهت صلاحية باركود الحضور. اطلب من المدرس باركودًا جديدًا.');
+    if ((student.deliveryMode === 'online' ? 'online' : 'center') !== 'online' || text(student.grade,80) !== session.grade || text(student.group,100) !== session.group) {
+      throw new HttpsError('permission-denied', 'هذا الباركود ليس مخصصًا لموعد الطالب.');
+    }
+    const date = session.attendanceDate || cairoDateKey(new Date());
+    const attendanceId = cleanDocId(`${studentCode}_${date}`);
+    const attendanceRef = db.collection('attendance').doc(attendanceId);
+    const attendanceSnap = await tx.get(attendanceRef);
+    if (attendanceSnap.exists && attendanceSnap.data()?.status === 'present') {
+      const existing = attendanceSnap.data() || {};
+      return { ok:true, alreadyPresent:true, studentName:text(existing.studentName || student.studentName || student.name,100), date, time:text(existing.time,40) };
+    }
+    const record = { id: attendanceId, studentId: studentCode, studentCode, studentName: text(student.studentName || student.name,100), grade: text(student.grade,80), group: text(student.group,100), deliveryMode:'online', scheduleId:session.scheduleId||'', status:'present', date, monthKey:date.slice(0,7), time:new Date().toLocaleTimeString('ar-EG',{timeZone:'Africa/Cairo',hour:'numeric',minute:'2-digit',hour12:true}), method:'online_screen_qr', sessionId:session.sessionId, createdAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() };
+    tx.set(attendanceRef, record, { merge: true });
+    tx.set(leaderboardStateRef, { version:FieldValue.increment(1), reason:'online-attendance', updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    return { ok:true, alreadyPresent:false, studentName:record.studentName, date, time:record.time };
+  });
 });
 
 exports.createStudentAccess = onCall(CALLABLE_OPTIONS, async request => {
@@ -494,6 +698,7 @@ exports.createStudentAccess = onCall(CALLABLE_OPTIONS, async request => {
       grade: text(body.grade, 80),
       month: text(body.month, 40),
       group: text(body.group, 100),
+      deliveryMode: body.deliveryMode === 'online' ? 'online' : 'center',
       academicYear: text(body.academicYear, 20),
       term: text(body.term, 40),
       notes: text(body.notes, 1500),
@@ -556,6 +761,7 @@ exports.createBooking = onCall(CALLABLE_OPTIONS, async request => {
   if (studentPhone.length < 10 || parentPhone.length < 10) throw new HttpsError('invalid-argument', 'اكتب أرقام هاتف صحيحة.');
   const requestedGrade = text(body.grade, 80);
   const requestedGroup = text(body.group, 100);
+  const requestedDeliveryMode = body.deliveryMode === 'online' ? 'online' : 'center';
   const selectedScheduleId = cleanDocId(text(body.scheduleId, 100));
   if (!selectedScheduleId) throw new HttpsError('failed-precondition', 'اختر موعدًا من مواعيد الصف المتاحة.');
   // These reads do not depend on one another. Parallel execution removes one
@@ -568,8 +774,24 @@ exports.createBooking = onCall(CALLABLE_OPTIONS, async request => {
     throw new HttpsError('failed-precondition', 'هذا الموعد لم يعد متاحًا. حدّث الصفحة واختر موعدًا آخر.');
   }
   const schedule = scheduleSnap.data();
+  const scheduleDeliveryMode = schedule.deliveryMode === 'online' ? 'online' : 'center';
+  if (scheduleDeliveryMode !== requestedDeliveryMode) throw new HttpsError('failed-precondition', 'نوع الموعد المختار تغيّر. حدّث الصفحة واختر الموعد من جديد.');
   if (text(schedule.grade, 80) !== requestedGrade) throw new HttpsError('failed-precondition', 'الموعد المختار غير متاح لهذا الصف.');
   if (text(schedule.name, 100) !== requestedGroup) throw new HttpsError('failed-precondition', 'المجموعة المختارة تغيّرت. حدّث الصفحة واخترها من جديد.');
+  const capacity = Math.max(0, Math.min(500, Number(schedule.capacity || 0)));
+  if (capacity) {
+    // Count both current records linked by scheduleId and older records that
+    // only stored the group name, so a migrated group cannot overbook.
+    const enrolledSnap = await db.collection('students').where('group', '==', requestedGroup).limit(1000).get();
+    const enrolled = enrolledSnap.docs.filter(doc => {
+      const student = doc.data() || {};
+      return student.active !== false
+        && text(student.grade, 80) === requestedGrade
+        && (student.deliveryMode === 'online' ? 'online' : 'center') === requestedDeliveryMode
+        && (!student.scheduleId || text(student.scheduleId, 100) === selectedScheduleId);
+    }).length;
+    if (enrolled >= capacity) throw new HttpsError('resource-exhausted', 'اكتمل عدد الطلاب في هذا الموعد. اختر موعدًا آخر.');
+  }
   // All codes shown after booking are digits only and can be typed with Arabic
   // or English numerals. They are issued immediately and never change later.
   const studentCode = code;
@@ -584,6 +806,7 @@ exports.createBooking = onCall(CALLABLE_OPTIONS, async request => {
     grade: requestedGrade,
     month: text(body.month, 40),
     group: text(schedule.name, 100),
+    deliveryMode: requestedDeliveryMode,
     scheduleId: selectedScheduleId,
     scheduleDays: text(schedule.days, 100),
     scheduleStartTime: text(schedule.startTime, 20),
@@ -604,6 +827,7 @@ exports.createBooking = onCall(CALLABLE_OPTIONS, async request => {
     grade: payload.grade,
     month: payload.month,
     group: payload.group,
+    deliveryMode: payload.deliveryMode,
     scheduleId: payload.scheduleId,
     scheduleDays: payload.scheduleDays,
     scheduleStartTime: payload.scheduleStartTime,
@@ -725,6 +949,7 @@ exports.getBookingStatus = onCall(CALLABLE_OPTIONS, async request => {
     grade: text(data.grade, 80),
     month: text(data.month, 40),
     group: text(data.group, 100),
+    deliveryMode: data.deliveryMode === 'online' ? 'online' : 'center',
     scheduleId: text(data.scheduleId, 100),
     scheduleDays: text(data.scheduleDays, 100),
     scheduleStartTime: text(data.scheduleStartTime, 20),
@@ -773,6 +998,7 @@ exports.createReview = onCall(CALLABLE_OPTIONS, async request => {
     role: text(body.role, 30),
     text: reviewText,
     rating: String(rating),
+    brand: 'saad-ewida',
     approved: false,
     date: new Date().toISOString().slice(0, 10),
     createdAt: FieldValue.serverTimestamp()
@@ -811,6 +1037,7 @@ exports.recordClassProgress = onCall(CALLABLE_OPTIONS, async request => {
     academicYear: text(student.academicYear, 20),
     term: text(student.term, 40),
     date,
+    monthKey: date.slice(0, 7),
     time: text(body.time, 30),
     title: type === 'recitation' ? 'تسميع الحصة' : 'واجب الحصة',
     status: type === 'recitation' ? 'تم التسميع' : 'تم عمل الواجب',
@@ -826,11 +1053,14 @@ exports.recordClassProgress = onCall(CALLABLE_OPTIONS, async request => {
 });
 
 function examMatchesStudent(exam, student) {
+  const examMode = exam.deliveryMode === 'online' ? 'online' : (exam.deliveryMode === 'center' ? 'center' : 'all');
+  const studentMode = student.deliveryMode === 'online' ? 'online' : 'center';
+  const modeOk = examMode === 'all' || examMode === studentMode;
   const gradeOk = !exam.grade || exam.grade === 'كل الصفوف' || exam.grade === student.grade;
   const groupOk = !exam.group || exam.group === 'كل المجموعات' || exam.group === student.group;
   const yearOk = !exam.academicYear || !student.academicYear || exam.academicYear === student.academicYear;
   const termOk = !exam.term || !student.term || exam.term === student.term;
-  return gradeOk && groupOk && yearOk && termOk;
+  return modeOk && gradeOk && groupOk && yearOk && termOk;
 }
 
 function examIsOpen(exam, now = Date.now()) {
@@ -1029,6 +1259,7 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
   const score = needsManualReview ? null : (autoScore || 0);
   const attemptRef = db.collection('exam_attempts').doc();
   const submittedAt = new Date().toISOString();
+  const monthKey = cairoDateKey(submittedAt).slice(0, 7);
   const attempt = {
     id: attemptRef.id,
     examId: session.examId,
@@ -1069,6 +1300,7 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
   const lockRef = db.collection('exam_locks').doc(cleanDocId(`${session.examId}_${studentCode}`));
   const studentAttemptsRef = db.collection('student_attempts').doc(cleanDocId(studentCode));
   const summaryRef = studentAttemptsRef.collection('attempts').doc(attemptRef.id);
+  const gradeRef = db.collection('grades').doc(attemptRef.id);
   const committedResult = await db.runTransaction(async tx => {
     const latestSession = await tx.get(sessionRef);
     if (!latestSession.exists) throw new HttpsError('not-found', 'جلسة الامتحان غير موجودة.');
@@ -1081,6 +1313,28 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
     tx.set(attemptRef, attempt);
     tx.set(summaryRef, summary);
     tx.set(studentAttemptsRef, { studentCode, lastAttempt:summary, count:FieldValue.increment(1), updatedAt:FieldValue.serverTimestamp() }, { merge: true });
+    if (score !== null) {
+      tx.set(gradeRef, {
+        id: attemptRef.id,
+        attemptId: attemptRef.id,
+        examId: session.examId,
+        exam: attempt.examTitle,
+        examTitle: attempt.examTitle,
+        studentCode,
+        studentName: attempt.studentName,
+        grade: attempt.grade,
+        group: attempt.group,
+        score,
+        maxScore: 100,
+        date: cairoDateKey(submittedAt),
+        submittedAt,
+        monthKey,
+        source: 'secure_exam',
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      tx.set(leaderboardStateRef, { version:FieldValue.increment(1), reason:'exam-grade', updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    }
     if (session.allowRetake !== true) tx.set(lockRef, { examId: session.examId, studentCode, attemptId: attemptRef.id, submittedAt: FieldValue.serverTimestamp() });
     tx.update(sessionRef, { status: 'submitted', result: summary, submittedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), deleteAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000) });
     return summary;
@@ -1092,7 +1346,20 @@ exports.prepareHomeworkUpload = onCall(CALLABLE_OPTIONS, async request => {
   const body = request.data || {};
   const studentCode = normalizeCode(body.studentCode);
   await rateLimitPublic('homework-prepare', studentCode, request, 5, 15, 60 * 60 * 1000);
-  await getStudentPortalByCode(studentCode);
+  const found = await getStudentPortalByCode(studentCode);
+  const assignmentId = text(body.assignmentId, 120);
+  let assignmentTitle = '';
+  if (assignmentId) {
+    const assignmentSnap = await db.collection('assignments').doc(cleanDocId(assignmentId)).get();
+    if (!assignmentSnap.exists || assignmentSnap.data().active === false) throw new HttpsError('not-found', 'الواجب غير متاح حاليًا.');
+    const assignment = assignmentSnap.data() || {};
+    const mode = found.data.deliveryMode === 'online' ? 'online' : 'center';
+    const matches = (!assignment.grade || assignment.grade === 'كل الصفوف' || assignment.grade === found.data.grade)
+      && (!assignment.deliveryMode || assignment.deliveryMode === 'all' || assignment.deliveryMode === mode)
+      && (!assignment.group || assignment.group === 'كل المجموعات' || assignment.group === found.data.group);
+    if (!matches) throw new HttpsError('permission-denied', 'هذا الواجب غير مخصص للطالب.');
+    assignmentTitle = text(assignment.title, 160);
+  }
   const fileName = text(body.fileName, 180).replace(/[\\/#?\[\]]/g, '-');
   const contentType = text(body.contentType, 100);
   const size = Number(body.size || 0);
@@ -1105,6 +1372,8 @@ exports.prepareHomeworkUpload = onCall(CALLABLE_OPTIONS, async request => {
     safeName,
     contentType,
     size,
+    assignmentId,
+    assignmentTitle,
     expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
     createdAt: FieldValue.serverTimestamp()
   });
@@ -1143,7 +1412,10 @@ exports.registerHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
   }
   const fileUrl = downloadToken ? `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${encodeURIComponent(downloadToken)}` : '';
   if (!fileUrl) throw new HttpsError('internal', 'تعذر تجهيز رابط ملف الواجب. حاول مرة أخرى.');
-  const ref = db.collection('homework_submissions').doc();
+  const assignmentId = text(token.assignmentId, 120);
+  if (text(body.assignmentId, 120) !== assignmentId) throw new HttpsError('permission-denied', 'بيانات الواجب لا تطابق تصريح الرفع.');
+  const ref = assignmentId ? db.collection('homework_submissions').doc(cleanDocId(`${studentCode}_${assignmentId}`)) : db.collection('homework_submissions').doc();
+  const submittedAt = new Date().toISOString();
   const batch = db.batch();
   batch.set(ref, {
     id: ref.id,
@@ -1151,6 +1423,9 @@ exports.registerHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
     studentName: text(found.data.studentName || found.data.name, 100),
     grade: text(found.data.grade, 80),
     group: text(found.data.group, 100),
+    assignmentId,
+    assignmentTitle: text(token.assignmentTitle, 160),
+    title: text(token.assignmentTitle, 160) || 'واجب مرفوع',
     academicYear: text(found.data.academicYear, 20),
     term: text(found.data.term, 40),
     fileName: text(body.fileName || token.safeName, 180),
@@ -1160,6 +1435,9 @@ exports.registerHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
     path: filePath,
     contentType,
     size,
+    date: cairoDateKey(submittedAt),
+    submittedAt,
+    monthKey: submittedAt.slice(0, 7),
     status: 'بانتظار مراجعة المدرس',
     completed: false,
     approved: false,
@@ -1187,7 +1465,7 @@ exports.reportClientError = onCall(CALLABLE_OPTIONS, async request => {
 const BACKUP_COLLECTIONS = [
   'settings','users','students','student_portal','parent_portal','bookings','booking_status','reviews',
   'materials','questions','groups','assignments','exams','exam_attempts','homework_submissions',
-  'attendance','recitations','grades','payments','reports','activityLog','client_errors',
+  'attendance','recitations','grades','payments','payment_records','reports','activityLog','client_errors',
   'student_attempts','exam_locks'
 ];
 
@@ -1264,7 +1542,7 @@ exports.scheduledPlatformBackup = onSchedule({ schedule: '30 2 * * *', timeZone:
   await pruneBackups(retentionDays);
 });
 
-exports.createBackupNow = onCall({ region: 'europe-west1', timeoutSeconds: 540, memory: '512MiB' }, async request => {
+exports.createBackupNow = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 540, memory: '512MiB' }, async request => {
   const staff = await requireStaff(request, ['admin', 'teacher']);
   const result = await createPlatformBackup('manual', staff);
   await pruneBackups(14);
@@ -1327,7 +1605,7 @@ async function restoreCollection(collectionName, rows) {
   }
 }
 
-exports.restoreAutomaticBackup = onCall({ region: 'europe-west1', timeoutSeconds: 540, memory: '1GiB' }, async request => {
+exports.restoreAutomaticBackup = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 540, memory: '1GiB' }, async request => {
   const staff = await requireStaff(request, ['admin', 'teacher']);
   const name = text(request.data && request.data.name, 500);
   const confirmation = text(request.data && request.data.confirmation, 50);
@@ -1373,7 +1651,7 @@ async function commitDeleteRefs(refs) {
   }
 }
 
-exports.deleteStudentSafely = onCall({ region: 'europe-west1', timeoutSeconds: 120, memory: '512MiB' }, async request => {
+exports.deleteStudentSafely = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 120, memory: '512MiB' }, async request => {
   const staff = await requireStaff(request, ['admin', 'teacher']);
   const studentCode = normalizeCode(request.data && request.data.studentCode);
   if (!validLegacyOrStrongCode(studentCode)) throw new HttpsError('invalid-argument', 'كود الطالب غير صالح.');
@@ -1381,7 +1659,7 @@ exports.deleteStudentSafely = onCall({ region: 'europe-west1', timeoutSeconds: 1
   const studentSnap = await studentRef.get();
   if (!studentSnap.exists) throw new HttpsError('not-found', 'الطالب غير موجود.');
   const student = studentSnap.data();
-  const relatedCollections = ['attendance','grades','recitations','homework_submissions','exam_attempts'];
+  const relatedCollections = ['attendance','grades','recitations','homework_submissions','exam_attempts','payment_records'];
   const relatedEntries = {};
   const relatedDocs = [];
   for (const collection of relatedCollections) {

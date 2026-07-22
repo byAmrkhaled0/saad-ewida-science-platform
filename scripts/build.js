@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '58.0.0';
+const release = '63.2.0';
 const seoPages = {
   'index.html': ['الأستاذ سعد عويضة | أحياء وعلوم وعلوم متكاملة', 'منصة الأستاذ سعد عويضة لشرح الأحياء والعلوم والعلوم المتكاملة: حجز، محاضرات أونلاين، تسجيلات، مراجعات، امتحانات ومتابعة دقيقة للطالب.'],
   'services.html': ['خدمات الأستاذ سعد عويضة التعليمية | أحياء وعلوم', 'تعرف على خدمات الأستاذ سعد عويضة: شرح مبسط، محاضرات مباشرة، تسجيلات، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -70,6 +70,9 @@ function escapeAttr(value) {
 for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) {
   const filePath = path.join(dist, file);
   let html = fs.readFileSync(filePath, 'utf8');
+  if (html.includes('firebase-app-compat.js') && !html.includes('firebase-app-check-compat.js')) {
+    html = html.replace(/(<script defer src="https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.5\/firebase-app-compat\.js"><\/script>)/, '$1\n<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>');
+  }
   const fallbackTitle = (html.match(/<title>([^<]*)<\/title>/i) || [,'منصة الأستاذ سعد عويضة'])[1];
   const existingDescription = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [,'منصة الأستاذ سعد عويضة التعليمية.'])[1];
   const [title, description] = seoPages[file] || [fallbackTitle, existingDescription];
@@ -79,9 +82,18 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   const robots = privatePages.has(file) ? 'noindex, nofollow, noarchive' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
   const meta = `<meta name="description" content="${escapeAttr(description)}">\n<meta name="robots" content="${robots}">\n<link rel="canonical" href="${canonical}">\n<link rel="alternate" hreflang="ar-EG" href="${canonical}">\n<meta property="og:locale" content="ar_EG">\n<meta property="og:type" content="website">\n<meta property="og:site_name" content="منصة الأستاذ سعد عويضة">\n<meta property="og:title" content="${escapeAttr(title)}">\n<meta property="og:description" content="${escapeAttr(description)}">\n<meta property="og:url" content="${canonical}">\n<meta property="og:image" content="${imageUrl}">\n<meta name="twitter:card" content="summary_large_image">\n<meta name="twitter:title" content="${escapeAttr(title)}">\n<meta name="twitter:description" content="${escapeAttr(description)}">\n<meta name="twitter:image" content="${imageUrl}">`;
   html = html.replace('</title>', `</title>\n${meta}`);
-  html = html.replace(/\?v=(?:56(?:\.\d+)*|57(?:\.\d+)*)/g, `?v=${release}`);
+  html = html.replace(/\?v=\d+(?:\.\d+)*/g, `?v=${release}`);
   html = html.replace(/<img(?![^>]*\bloading=)([^>]*?)>/gi, '<img loading="lazy" decoding="async"$1>');
-  if (file === 'index.html') html = html.replace(/<img loading="lazy" decoding="async"([^>]*class=["'][^"']*teacher[^"']*["'][^>]*)>/i, '<img fetchpriority="high" decoding="async"$1>');
+  if (file === 'index.html') {
+    html = html.replace(/<img\s+loading="lazy"\s+decoding="async"([^>]*src=["']assets\/teacher\.webp["'][^>]*)>/i, '<img fetchpriority="high" decoding="async"$1>');
+    html = html.replace(/<img[^>]*src=["']assets\/teacher\.webp["'][^>]*>/i, tag => {
+      let seenDecoding=false, seenPriority=false;
+      return tag
+        .replace(/\sdecoding="async"/g, value => seenDecoding ? '' : (seenDecoding=true,value))
+        .replace(/\sfetchpriority="high"/g, value => seenPriority ? '' : (seenPriority=true,value));
+    });
+    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher.webp" fetchpriority="high">\n</head>`);
+  }
   if (file === 'index.html') {
     const schema = { '@context':'https://schema.org', '@graph':[
       { '@type':'WebSite', '@id':`${siteUrl}/#website`, url:`${siteUrl}/`, name:'منصة الأستاذ سعد عويضة', inLanguage:'ar-EG' },
@@ -90,6 +102,44 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
     ]};
     html = html.replace('</head>', `<script type="application/ld+json">${JSON.stringify(schema)}</script>\n</head>`);
   }
+  fs.writeFileSync(filePath, html);
+}
+
+// Produce one stylesheet and one script per surface. This preserves the proven
+// execution order while removing the many render-blocking version requests.
+const cssParts = ['site.css','v55.css','v56.css','v57.css','v59.css','v60.css','v61.css'];
+const publicJsParts = ['app.js','v53-upgrades.js','v56-fixes.js','v61-ui.js'];
+const adminJsParts = ['app.js','admin.js','v61-ui.js'];
+const joinAssets = (items, output) => fs.writeFileSync(
+  path.join(dist, 'assets', output),
+  items.map(name => fs.readFileSync(path.join(root, 'assets', name), 'utf8')).join('\n;\n')
+);
+joinAssets(cssParts, 'platform.css');
+joinAssets(publicJsParts, 'platform.js');
+joinAssets(adminJsParts, 'admin-platform.js');
+
+// Files superseded by the production bundles or not referenced by any page are
+// excluded from the deploy artifact to reduce transfer and cache storage.
+const legacyAdminAssets = ['v55-admin.js','v59-admin.js','v60-admin.js','v61-admin.js'];
+for (const name of [...cssParts, ...publicJsParts, ...adminJsParts, ...legacyAdminAssets]) {
+  if (['firebase-config.js','firebase-sync.js','online.js'].includes(name)) continue;
+  fs.rmSync(path.join(dist, 'assets', name), { force: true });
+}
+
+for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) {
+  const filePath = path.join(dist, file);
+  let html = fs.readFileSync(filePath, 'utf8');
+  html = html.replace(/(?:<link[^>]+href=["']assets\/(?:site|v55|v56|v57|v59|v60|v61)\.css[^>]*>\s*)+/gi, `<link rel="stylesheet" href="assets/platform.css?v=${release}">\n`);
+  html = html.replace(/(?:<script defer src=["']assets\/(?:app|v53-upgrades|v56-fixes)\.js[^>]*><\/script>\s*)+/gi, `<script defer src="assets/platform.js?v=${release}"></script>\n`);
+  if (file === 'teacher-login.html') {
+    html = html.replace(/<script defer src=["']assets\/(?:platform|app|admin|v53-upgrades|v55-admin|v56-fixes|v59-admin|v60-admin)\.js[^>]*><\/script>\s*/gi, '');
+    html = html.replace('</body>', `<script defer src="assets/admin-platform.js?v=${release}"></script>\n</body>`);
+  }
+  const publicBundleTag = `<script defer src="assets/platform.js?v=${release}"></script>`;
+  const adminBundleTag = `<script defer src="assets/admin-platform.js?v=${release}"></script>`;
+  let publicSeen = false, adminSeen = false;
+  html = html.replace(new RegExp(publicBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => publicSeen ? '' : (publicSeen = true, match));
+  html = html.replace(new RegExp(adminBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => adminSeen ? '' : (adminSeen = true, match));
   fs.writeFileSync(filePath, html);
 }
 

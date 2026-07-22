@@ -1,6 +1,6 @@
 {
   "name": "saad-ewida-platform-functions",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "main": "index.js",
   "engines": {
@@ -9,11 +9,12 @@
   "scripts": {
     "lint": "node --check index.js",
     "serve": "firebase emulators:start --only functions,firestore",
-    "deploy": "firebase deploy --only functions"
+    "deploy": "npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only functions"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0",
-    "firebase-functions": "^7.2.5"
+    "firebase-functions": "^7.2.5",
+    "qrcode": "^1.5.4"
   },
   "overrides": {
     "uuid": "^11.1.1"

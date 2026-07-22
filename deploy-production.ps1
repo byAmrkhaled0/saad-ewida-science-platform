@@ -27,10 +27,10 @@ Invoke-Checked npm --prefix functions ci --no-audit --no-fund
 Invoke-Checked npm --prefix functions ls firebase-functions firebase-admin
 
 Write-Host "4/7 Deploying Firebase Functions..." -ForegroundColor Cyan
-Invoke-Checked firebase deploy --only functions
+Invoke-Checked npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only "functions"
 
 Write-Host "5/7 Deploying Firebase rules and indexes..." -ForegroundColor Cyan
-Invoke-Checked firebase deploy --only firestore:rules,firestore:indexes,storage
+Invoke-Checked npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only "firestore:rules,firestore:indexes,storage"
 
 Write-Host "6/7 Checking Git repository..." -ForegroundColor Cyan
 if (-not (Test-Path (Join-Path $ProjectRoot ".git"))) {
@@ -43,7 +43,7 @@ Write-Host "7/7 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked git add -A
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked git commit -m "Stable production release V54"
+  Invoke-Checked git commit -m "Complete production release V63.2"
   Invoke-Checked git push origin main
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow

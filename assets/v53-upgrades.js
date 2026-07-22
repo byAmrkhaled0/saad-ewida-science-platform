@@ -48,7 +48,7 @@
     mergeData=function(data){
       const d=defaultData();
       const p=data&&typeof data==='object'?data:{};
-      const arrays=['students','bookings','materials','questions','exams','examAttempts','grades','reviews','groups','assignments'];
+      const arrays=['students','bookings','materials','questions','exams','examAttempts','grades','reviews','groups','assignments','paymentRecords'];
       const result={...d,...p,settings:{...d.settings,...(p.settings||{})}};
       arrays.forEach(key=>{result[key]=Array.isArray(p[key])?p[key]:[];});
       result.students=result.students.map(st=>({...st,academicYear:st.academicYear||result.settings.academicYear,term:st.term||result.settings.term}));
@@ -57,8 +57,8 @@
   }
   if(typeof publicDataOnly==='function'){
     publicDataOnly=function(data){
-      const d=mergeData(data),settings=d.settings||{};
-      return {...defaultData(),materials:d.materials,questions:d.questions,reviews:d.reviews.filter(r=>r.approved===true),groups:d.groups,assignments:d.assignments,settings:{siteUrl:settings.siteUrl||DEFAULT_SITE_URL,teacherPhone:settings.teacherPhone||TEACHER_WHATSAPP,teacherName:settings.teacherName||'الأستاذ سعد عويضة',homeNotice:settings.homeNotice||'',academicYear:settings.academicYear||calculatedAcademicYear(),term:settings.term||'الترم الأول'}};
+      const d=mergeData(data),settings=d.settings||{},published=rows=>(rows||[]).filter(item=>item.active!==false);
+      return {...defaultData(),materials:published(d.materials),questions:published(d.questions),reviews:d.reviews.filter(r=>r.approved===true),groups:published(d.groups),assignments:published(d.assignments),settings:{siteUrl:settings.siteUrl||DEFAULT_SITE_URL,teacherPhone:settings.teacherPhone||TEACHER_WHATSAPP,teacherName:settings.teacherName||'الأستاذ سعد عويضة',facebookUrl:settings.facebookUrl||'https://www.facebook.com/saad.abomoaz',homeNotice:settings.homeNotice||'',academicYear:settings.academicYear||calculatedAcademicYear(),term:settings.term||'الترم الأول'}};
     };
   }
   if(typeof appData!=='undefined') appData=mergeData(appData);
