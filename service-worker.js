@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v574-production-mobile-parity";
+const CACHE_NAME = "mf-science-v575-production-firebase-new";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
@@ -16,12 +16,12 @@ try {
   importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
   importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
   firebase.initializeApp({
-    apiKey:'AIzaSyANU2fln6kuYCtdm1WRMtG-AD5pUwV9a4g',
+apiKey: 'AIzaSyDG5LHrXBeyKFaN1Tmq5HjOX-nOv2z_BBA',
     authDomain:'saad-ewida-science-platform.firebaseapp.com',
     projectId:'saad-ewida-science-platform',
     storageBucket:'saad-ewida-science-platform.firebasestorage.app',
-    messagingSenderId:'805108517684',
-    appId:'1:805108517684:web:68c0cb7e506a583e3a7361'
+    messagingSenderId:'459812644202',
+    appId:'1:459812644202:web:0b02982aab7f74fdcf7113'
   });
   firebase.messaging().onBackgroundMessage(payload => {
     const notification = payload.notification || payload.data || {};
