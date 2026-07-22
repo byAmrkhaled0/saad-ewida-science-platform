@@ -1,11 +1,12 @@
 {
   "name": "saad-ewida-science-platform",
-  "version": "63.3.5",
+  "version": "63.3.6",
   "private": true,
   "scripts": {
     "dev": "npm run build && node local-server.js",
     "preview": "npm run build && node local-server.js",
     "build": "node scripts/build.js",
+    "verify:production": "node scripts/verify-live-functions.js",
     "firebase:rules": "npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only firestore:rules,firestore:indexes,storage",
     "firebase:functions": "npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only functions",
     "firebase:hosting": "npm run build && npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only hosting",

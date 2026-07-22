@@ -213,7 +213,8 @@ if (!read('functions/index.js').includes("db.collection('groups').doc(selectedSc
 if (!read('assets/app.js').includes('normalizeText(item.grade)===selected') || read('index.html').includes('bookingStatusForm')) fail('Grade-only booking groups or booking-status removal is incomplete');
 if (!read('service-worker.js').includes('caches.match(url.pathname,{ignoreSearch:true})') || !read('assets/app.js').includes("localDevelopment=['localhost','127.0.0.1','0.0.0.0']")) fail('Portal navigation/offline fallback safeguards are incomplete');
 if (!read('assets/admin.js').includes('bookingActionPending') || read('assets/admin.js').includes("showIssuedCodes(student,'تم قبول الحجز وتسجيل الطالب')")) fail('Instant repeated booking approval safeguards are incomplete');
-if (!read('functions/index.js').includes("invoker: 'public'")) fail('Callable browser/CORS invoker configuration is missing');
+if (!functionsSource.includes("invoker: 'public'") || !functionsSource.includes('cors: true') || !functionsSource.includes('enforceAppCheck: false')) fail('Callable browser/CORS invoker configuration is missing');
+if (!functionsSource.includes('exports.platformApi = onRequest') || !functionsSource.includes('HTTP_BRIDGE_ACTIONS') || !firebaseSyncSource.includes('try{return await callHttpBridge(name,payload||{},false)')) fail('Public HTTP recovery bridge for Cloud Functions is incomplete');
 if (read('assets/app.js').includes('رقم ولي الأمر لازم يكون مختلف') || read('functions/index.js').includes('studentPhone === parentPhone')) fail('Same-number parent/student booking is still blocked');
 if (!read('assets/app.js').includes('toEnglishDigits') || !read('functions/index.js').includes('normalizeDigits')) fail('Arabic and English digit normalization is incomplete');
 if (!functionsSource.includes('uniqueNumericCode') || !functionsSource.includes('studentCode, parentCode') || !read('assets/app.js').includes('كود الطالب')) fail('Immediate numeric booking access code is incomplete');
@@ -223,6 +224,7 @@ if (!read('teacher-login.html').includes('firebase-messaging-compat.js') || !sw.
 if (sw.includes("importScripts('https://") || /\bwindow\s*[.=]/.test(read('assets/vendor/firebase-messaging-worker-10.12.5.min.js'))) fail('Background messaging SDK must be local and WorkerGlobalScope-safe');
 if (!read('vercel.json').includes('https://apis.google.com') || !read('firebase.json').includes('https://apis.google.com')) fail('Firebase Auth CSP sources are incomplete');
 if (!read('assets/admin.js').includes('MFCloud?.approveBooking') || !read('functions/index.js').includes('tx.delete(bookingRef)')) fail('Atomic booking approval and queue removal are incomplete');
+if (!functionsSource.includes('Never return FieldValue.serverTimestamp() sentinels') || !functionsSource.includes('return { ...portal, bookingCode, code: studentCode')) fail('Booking approval still risks returning non-serializable Firestore sentinels');
 if (!read('assets/firebase-sync.js').includes('approveBookingDirect') || !read('assets/firebase-sync.js').includes('firestoreId:doc.id') || !read('assets/admin.js').includes('bookingMatches')) fail('Booking approval fallback or real Firestore document tracking is incomplete');
 if (!read('functions/index.js').includes("db.collection('student_portal').doc(cleanDocId(normalized)).get()") || !read('functions/index.js').includes('portal-incentive-unavailable')) fail('Parent portal fallback or optional-data isolation is incomplete');
 if (/مجموعة السبت والثلاثاء|مجموعة الأحد والأربعاء|مجموعة الاثنين والخميس|أونلاين متابعة/.test(read('index.html'))) fail('Static booking groups must not appear in the booking form');
@@ -236,7 +238,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '63.3.5' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.5'") || !read('service-worker.js').includes('mf-science-v6335-production')) fail('V63 version and cache identifiers are not unified');
+if (packageInfo.version !== '63.3.6' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.6'") || !read('service-worker.js').includes('mf-science-v6336-production')) fail('V63 version and cache identifiers are not unified');
 for (const feature of ['renderMonthlyPaymentsV63','renderExamsManagerV63','renderAssignmentsManagerV63','renderOnlineManagerV63','renderReports','renderSettings','openStudentEditModal']) {
   if (!adminSourceCode.includes(feature) && feature !== 'openStudentEditModal') fail(`V63 administration feature is missing: ${feature}`);
 }

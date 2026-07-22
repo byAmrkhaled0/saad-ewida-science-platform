@@ -26,12 +26,39 @@
     const platformSettingsDoc=db.collection('settings').doc('platform');
 
     const callable=name=>{
-      if(!functions)return null;
-      const fn=functions.httpsCallable(name);
+      const fn=functions?functions.httpsCallable(name):null;
       return async payload=>{
-        const result=await fn(payload||{});
-        return result&&Object.prototype.hasOwnProperty.call(result,'data')?result.data:result;
+        let bridgeError=null;
+        try{return await callHttpBridge(name,payload||{},false);}
+        catch(error){
+          bridgeError=error;
+          const raw=`${error?.code||''} ${error?.message||''}`;
+          if(/permission-denied|unauthenticated|invalid-argument|not-found|already-exists|failed-precondition|resource-exhausted/i.test(raw))throw error;
+        }
+        if(!fn)throw bridgeError||new Error(`Firebase function ${name} is unavailable`);
+        try{
+          const result=await fn(payload||{});
+          return result&&Object.prototype.hasOwnProperty.call(result,'data')?result.data:result;
+        }catch(error){error.bridgeError=bridgeError;throw error;}
       };
+    };
+
+    const bridgeRegion=cfg.functionsRegion||'europe-west1';
+    const bridgeUrl=`https://${bridgeRegion}-${cfg.projectId}.cloudfunctions.net/platformApi`;
+    const callHttpBridge=async(action,data,requiresAuth=false)=>{
+      const headers={'Content-Type':'application/json'};
+      const user=auth.currentUser;
+      if(requiresAuth&&!user)throw Object.assign(new Error('يجب تسجيل دخول المدرس من جديد.'),{code:'functions/unauthenticated'});
+      if(user)headers.Authorization=`Bearer ${await user.getIdToken()}`;
+      let response;
+      try{response=await fetch(bridgeUrl,{method:'POST',headers,body:JSON.stringify({action,data:data||{}}),cache:'no-store'});}
+      catch(error){throw Object.assign(error||new Error('HTTP bridge unavailable'),{code:error?.code||'functions/unavailable'});}
+      let body=null;try{body=await response.json();}catch(_){}
+      if(!response.ok||!body?.ok){
+        const remote=body?.error||{};
+        throw Object.assign(new Error(remote.message||`HTTP ${response.status}`),{code:`functions/${remote.code||'internal'}`,httpStatus:response.status});
+      }
+      return body.data;
     };
 
     const transientFirebaseError=error=>/unavailable|internal|network|deadline-exceeded|fetch|timeout/i.test(`${error?.code||''} ${error?.message||''}`);
@@ -540,10 +567,10 @@
         const source=input&&typeof input==='object'?input:{code:input};
         const code=normalizeCode(source.code||source.id||source.firestoreId||'');
         const bookingId=String(source.firestoreId||source.id||code).trim();
-        let callableError=null;
-        if(calls.approveBooking){try{return await retryTransient(()=>calls.approveBooking({code,bookingId}),1);}catch(error){callableError=error;}}
+        let remoteError=null;
+        if(calls.approveBooking){try{return await retryTransient(()=>calls.approveBooking({code,bookingId}),1);}catch(error){remoteError=error;const raw=`${error?.code||''} ${error?.message||''}`;if(/permission-denied|unauthenticated|invalid-argument|not-found/i.test(raw))throw error;}}
         try{return await approveBookingDirect({...source,code,firestoreId:bookingId});}
-        catch(error){error.callableError=callableError;throw callableError||error;}
+        catch(error){error.remoteError=remoteError;throw remoteError||error;}
       },
       rejectBooking:async code=>{if(!calls.rejectBooking)throw new Error('Secure booking rejection function is unavailable');return calls.rejectBooking({code:normalizeCode(code)});},
       subscribeToBookings:handler=>db.collection('bookings').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>handler(snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id})),snap.docChanges()),error=>console.warn('booking-listener',error)),
@@ -589,7 +616,11 @@
       getPublicLeaderboard:grade=>calls.getPublicLeaderboard?calls.getPublicLeaderboard({grade:String(grade||'').trim()}):Promise.resolve([]),
       createAttendanceSession:payload=>calls.createAttendanceSession?calls.createAttendanceSession(payload):Promise.reject(new Error('Attendance session service is unavailable')),
       claimAttendanceSession:(token,studentCode)=>calls.claimAttendanceSession?calls.claimAttendanceSession({token:String(token||''),studentCode:normalizeCode(studentCode)}):Promise.reject(new Error('Attendance claim service is unavailable')),
-      getParentStudent:code=>{if(!calls.getPortalStudent)throw new Error('Secure parent portal function is unavailable');return retryTransient(()=>calls.getPortalStudent({code:normalizeCode(code),mode:'parent'}),1);},
+      getParentStudent:async code=>{
+        const data={code:normalizeCode(code),mode:'parent'};
+        if(!calls.getPortalStudent)throw new Error('Secure parent portal function is unavailable');
+        return retryTransient(()=>calls.getPortalStudent(data),1);
+      },
       uploadHomework:async(file,studentCode,assignmentId='')=>{const normalized=normalizeCode(studentCode),assignment=String(assignmentId||'').trim();if(!calls.prepareHomeworkUpload||!calls.registerHomeworkSubmission)throw new Error('Secure homework function is unavailable');const permit=await calls.prepareHomeworkUpload({studentCode:normalized,assignmentId:assignment,fileName:file.name,size:file.size,contentType:file.type});const uploaded=await upload(file,`homework/${cleanDocId(normalized)}/${permit.uploadId}`,permit.safeName,true);await calls.registerHomeworkSubmission({studentCode:normalized,assignmentId:assignment,uploadId:permit.uploadId,...uploaded,fileName:file.name});return uploaded;},
       // Keep every staff attachment inside the single path allowed by Storage
       // rules.  The logical folder is preserved as a filename prefix so that

@@ -1,4 +1,6 @@
-# نشر الإصدار 63.3.5
+# نشر الإصدار 63.3.6
+
+الإصدار 63.3.6 يضيف الدالة `platformApi` كمسار استرداد لـCORS، ويختبرها تلقائيًا أثناء `npm run deploy:production`.
 
 ## صلاحيات حساب تشغيل Cloud Functions — مرة واحدة
 
@@ -33,6 +35,14 @@ npm run firebase:deploy:all
 ```
 
 استخدم Node.js 22 عند تجهيز ونشر Firebase Functions.
+
+إذا توقف اختبار CORS عند `platformApi` رغم نجاح النشر، نفّذ الأمر التالي مرة واحدة من Google Cloud Shell ثم أعد `npm run verify:production`:
+
+```bash
+gcloud run services add-iam-policy-binding platformapi --project=saad-ewida-science-platform --region=europe-west1 --member="allUsers" --role="roles/run.invoker"
+```
+
+لا تضف `vercel.live` إلى CSP؛ رسالة Vercel Feedback لا تخص وظائف الموقع ويمكن إيقافها من إعدادات Toolbar في Vercel.
 
 مهم: إصلاح بوابة طالب الأونلاين، باركود الحضور، فلترة الامتحانات والواجبات لا يكتمل بمجرد تشغيل localhost أو نشر ملفات الواجهة. يجب نشر Functions والقواعد من هذه النسخة.
 

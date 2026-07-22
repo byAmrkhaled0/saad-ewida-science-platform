@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const zlib = require('zlib');
 const admin = require('firebase-admin');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2/options');
@@ -16,21 +16,34 @@ const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
 const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
-// Callable endpoints must accept the browser's unauthenticated CORS preflight.
-// Sensitive operations still enforce staff authentication inside each handler.
-const WEB_CORS_ORIGINS = [
-  /^https:\/\/.*\.vercel\.app$/,
-  'https://saad-ewida-science-platform.web.app',
-  'https://saad-ewida-science-platform.firebaseapp.com',
-  /^http:\/\/localhost(?::\d+)?$/,
-  /^http:\/\/127\.0\.0\.1(?::\d+)?$/
-];
+const BACKEND_RELEASE = '63.3.6';
+// Callable endpoints must answer the browser's unauthenticated OPTIONS
+// preflight. Authentication/rate limits are enforced inside each handler, so
+// accepting browser origins here does not grant access to protected actions.
 const CALLABLE_OPTIONS = {
   region: 'europe-west1',
   timeoutSeconds: 30,
   invoker: 'public',
-  cors: WEB_CORS_ORIGINS
+  cors: true,
+  enforceAppCheck: false,
+  labels: { 'platform-release': '63-3-6' }
 };
+const HTTP_BRIDGE_OPTIONS = {
+  region: 'europe-west1',
+  timeoutSeconds: 540,
+  memory: '512MiB',
+  invoker: 'public',
+  cors: true,
+  labels: { 'platform-release': '63-3-6' }
+};
+const HTTP_BRIDGE_ACTIONS = new Set([
+  'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
+  'getPublicLeaderboard', 'createAttendanceSession', 'claimAttendanceSession', 'createStudentAccess',
+  'createBooking', 'approveBooking', 'getBookingStatus', 'rejectBooking', 'createReview',
+  'recordClassProgress', 'getExamDashboard', 'startExam', 'submitExam', 'prepareHomeworkUpload',
+  'registerHomeworkSubmission', 'reportClientError', 'createBackupNow', 'listAutomaticBackups',
+  'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely', 'registerTeacherPushToken'
+]);
 
 function cleanDocId(value) {
   return String(value || '').trim().replace(/[\\/#?\[\]]/g, '-');
@@ -404,7 +417,7 @@ async function studentRecords(studentCode) {
   return { attendance: byDate(attendance), grades: byDate(grades), homeworks: byDate(homeworks), recitations: byDate(recitations), payments: payments.sort((a,b)=>String(a.monthKey||'').localeCompare(String(b.monthKey||''))) };
 }
 
-exports.getPortalStudent = onCall(CALLABLE_OPTIONS, async request => {
+async function getPortalStudentHandler(request) {
   const code = normalizeCode(request.data && request.data.code);
   const mode = request.data && request.data.mode === 'parent' ? 'parent' : 'student';
   await rateLimitPublic(`portal-${mode}`, code, request, 8, 35, 60 * 1000);
@@ -427,7 +440,9 @@ exports.getPortalStudent = onCall(CALLABLE_OPTIONS, async request => {
     participants: monthlyRows.filter(row => row.grade === grade).length
   };
   return { ...portalResponse(found.data, attempts, records), assignments, onlineContent, monthlyIncentive };
-});
+}
+
+exports.getPortalStudent = onCall(CALLABLE_OPTIONS, getPortalStudentHandler);
 
 exports.getPublicResources = onCall(CALLABLE_OPTIONS, async request => {
   await rateLimit('public-resources-ip', requestIp(request), 80, 60 * 1000);
@@ -894,7 +909,7 @@ exports.createBooking = onCall(CALLABLE_OPTIONS, async request => {
   return response;
 });
 
-exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
+async function approveBookingHandler(request) {
   const staff = await requireStaff(request);
   const bookingCode = normalizeCode(request.data && request.data.code);
   const bookingId = text(request.data && (request.data.bookingId || request.data.code), 40);
@@ -916,7 +931,10 @@ exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
     if (!bookingSnap.exists) {
       const statusSnap = await tx.get(statusRef);
       const status = statusSnap.exists ? statusSnap.data() : {};
-    if (String(status.status || '').includes('القبول')) return { ...status, bookingCode, code: status.studentCode, alreadyApproved: true, bookingDeleted: true };
+      if (String(status.status || '').includes('القبول')) {
+        const approved = portalResponse(status, []);
+        return { ...approved, bookingCode, code: approved.studentCode, parentCode: text(status.parentCode || approved.studentCode, 40), alreadyApproved: true, bookingDeleted: true };
+      }
       throw new HttpsError('not-found', 'الحجز غير موجود أو تم التعامل معه من قبل.');
     }
     const status = {};
@@ -951,8 +969,76 @@ exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
     tx.set(statusRef, { ...status, code: bookingCode, name, studentName: name, studentCode, parentCode, status: 'تم القبول والتسجيل كطالب', acceptedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.delete(bookingRef);
     tx.set(db.collection('activityLog').doc(), { action: 'تم قبول الحجز وتسجيل الطالب', meta: { bookingCode, bookingId, studentCode }, actorUid: staff.uid, actorEmail: staff.email || '', actorRole: staff.role || '', createdAt: FieldValue.serverTimestamp() });
-    return { ...student, bookingCode, code: studentCode, bookingDeleted: true };
+    // Never return FieldValue.serverTimestamp() sentinels to a callable client.
+    // They are valid Firestore writes but are not a stable JSON response and
+    // previously turned a successful approval into FirebaseError: INTERNAL.
+    return { ...portal, bookingCode, code: studentCode, studentCode, parentCode, bookingDeleted: true };
   });
+}
+
+exports.approveBooking = onCall(CALLABLE_OPTIONS, approveBookingHandler);
+
+async function firebaseAuthFromHttp(request) {
+  const header = String(request.headers?.authorization || '');
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  try {
+    const token = await admin.auth().verifyIdToken(match[1]);
+    return { uid: token.uid, token };
+  } catch (_) {
+    throw new HttpsError('unauthenticated', 'جلسة تسجيل الدخول غير صالحة. سجّل الدخول من جديد.');
+  }
+}
+
+function httpStatusForHttpsError(code) {
+  return ({
+    'invalid-argument': 400,
+    unauthenticated: 401,
+    'permission-denied': 403,
+    'not-found': 404,
+    'already-exists': 409,
+    'failed-precondition': 412,
+    'resource-exhausted': 429,
+    unavailable: 503
+  })[code] || 500;
+}
+
+// Public HTTP bridge for the two critical portal actions. onRequest exposes
+// invoker:public in the deployment manifest, unlike older callable revisions
+// whose Cloud Run IAM state can remain private. The approval handler still
+// validates the Firebase ID token and the staff document before any write.
+exports.platformApi = onRequest(HTTP_BRIDGE_OPTIONS, async (request, response) => {
+  response.set('Cache-Control', 'no-store');
+  if (request.method !== 'POST') {
+    response.status(405).json({ ok: false, error: { code: 'method-not-allowed', message: 'استخدم POST فقط.' }, release: BACKEND_RELEASE });
+    return;
+  }
+  try {
+    const action = text(request.body?.action, 80);
+    const data = request.body?.data && typeof request.body.data === 'object' ? request.body.data : {};
+    const auth = await firebaseAuthFromHttp(request);
+    const callableRequest = { data, auth, rawRequest: request };
+    let result;
+    if (action === 'getPortalStudent') result = await getPortalStudentHandler(callableRequest);
+    else if (action === 'approveBooking') result = await approveBookingHandler(callableRequest);
+    else if (HTTP_BRIDGE_ACTIONS.has(action) && typeof exports[action]?.run === 'function') result = await exports[action].run(callableRequest);
+    else throw new HttpsError('invalid-argument', 'العملية المطلوبة غير مدعومة.');
+    response.status(200).json({ ok: true, data: result, release: BACKEND_RELEASE });
+  } catch (error) {
+    const knownCode = String(error?.code || '').replace(/^functions\//, '');
+    const known = error instanceof HttpsError || knownCode in {
+      'invalid-argument': 1, unauthenticated: 1, 'permission-denied': 1,
+      'not-found': 1, 'already-exists': 1, 'failed-precondition': 1,
+      'resource-exhausted': 1, unavailable: 1
+    };
+    const code = known ? knownCode : 'internal';
+    if (!known) console.error('platform-api-error', error);
+    response.status(httpStatusForHttpsError(code)).json({
+      ok: false,
+      error: { code, message: known ? text(error.message, 500) : 'تعذر تنفيذ العملية الآن.' },
+      release: BACKEND_RELEASE
+    });
+  }
 });
 
 exports.getBookingStatus = onCall(CALLABLE_OPTIONS, async request => {
