@@ -50,10 +50,10 @@ for (const entry of entriesToCopy) {
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
 const release = '63.3.6';
 const seoPages = {
-  'index.html': ['الأستاذ سعد عويضة | أحياء وعلوم وعلوم متكاملة', 'منصة الأستاذ سعد عويضة لشرح الأحياء والعلوم والعلوم المتكاملة: حجز، محاضرات أونلاين، تسجيلات، مراجعات، امتحانات ومتابعة دقيقة للطالب.'],
-  'services.html': ['خدمات الأستاذ سعد عويضة التعليمية | أحياء وعلوم', 'تعرف على خدمات الأستاذ سعد عويضة: شرح مبسط، محاضرات مباشرة، تسجيلات، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
+  'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'الأستاذ سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
+  'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات الأستاذ سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
   'materials.html': ['المراجعات وبنك الأسئلة | الأستاذ سعد عويضة', 'مراجعات منظمة وبنك أسئلة وملفات تعليمية للأحياء والعلوم والعلوم المتكاملة حسب الصف الدراسي.'],
-  'online.html': ['المحاضرات الأونلاين والتسجيلات | الأستاذ سعد عويضة', 'ادخل محاضرات الأستاذ سعد عويضة المباشرة وشاهد تسجيلات Google Drive المرتبة حسب الصف والترم والوحدة.'],
+  'online.html': ['مدرس أحياء وعلوم أونلاين | الأستاذ سعد عويضة', 'محاضرات أحياء وعلوم وعلوم متكاملة أونلاين مع الأستاذ سعد عويضة لجميع المراحل، تشمل بثًا مباشرًا وتسجيلات مرتبة وتدريبات ومتابعة للطالب.'],
   'questions.html': ['بنك الأسئلة والتدريبات | الأستاذ سعد عويضة', 'أسئلة وتدريبات ومراجعات في الأحياء والعلوم والعلوم المتكاملة لطلاب المراحل المختلفة.'],
   'exams.html': ['امتحانات الأحياء والعلوم | الأستاذ سعد عويضة', 'امتحانات إلكترونية للأحياء والعلوم والعلوم المتكاملة مع وقت محدد ونتيجة ومتابعة لمستوى الطالب.'],
   'reviews.html': ['آراء الطلاب | الأستاذ سعد عويضة', 'تقييمات وآراء طلاب منصة الأستاذ سعد عويضة في شرح الأحياء والعلوم والعلوم المتكاملة.'],
@@ -94,8 +94,8 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   if (file === 'index.html') {
     const schema = { '@context':'https://schema.org', '@graph':[
       { '@type':'WebSite', '@id':`${siteUrl}/#website`, url:`${siteUrl}/`, name:'منصة الأستاذ سعد عويضة', inLanguage:'ar-EG' },
-      { '@type':'Person', '@id':`${siteUrl}/#teacher`, name:'سعد عويضة', jobTitle:'مدرس الأحياء والعلوم والعلوم المتكاملة', url:`${siteUrl}/`, image:`${siteUrl}/assets/teacher.webp`, sameAs:['https://www.facebook.com/saad.abomoaz'] },
-      { '@type':'EducationalOrganization', '@id':`${siteUrl}/#organization`, name:'منصة الأستاذ سعد عويضة', url:`${siteUrl}/`, logo:imageUrl, founder:{'@id':`${siteUrl}/#teacher`}, slogan:'نسعى للإبداع والتفوق', areaServed:'EG' }
+      { '@type':'Person', '@id':`${siteUrl}/#teacher`, name:'سعد عويضة', jobTitle:'مدرس الأحياء والعلوم والعلوم المتكاملة', description:'مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل', telephone:'+201097163200', url:`${siteUrl}/`, image:`${siteUrl}/assets/teacher.webp`, knowsAbout:['الأحياء','العلوم','العلوم المتكاملة'], areaServed:[{'@type':'City',name:'المنصورة'},{'@type':'Country',name:'مصر'}], sameAs:['https://www.facebook.com/saad.abomoaz'] },
+      { '@type':'EducationalOrganization', '@id':`${siteUrl}/#organization`, name:'منصة الأستاذ سعد عويضة', alternateName:'منصة سعد عويضة للأحياء والعلوم', description:'منصة تعليمية لشرح الأحياء والعلوم والعلوم المتكاملة في المنصورة وأونلاين', url:`${siteUrl}/`, logo:imageUrl, telephone:'+201097163200', founder:{'@id':`${siteUrl}/#teacher`}, slogan:'نسعى للإبداع والتفوق', areaServed:[{'@type':'City',name:'المنصورة'},{'@type':'AdministrativeArea',name:'الدقهلية'},{'@type':'Country',name:'مصر'}], sameAs:['https://www.facebook.com/saad.abomoaz'] }
     ]};
     html = html.replace('</head>', `<script type="application/ld+json">${JSON.stringify(schema)}</script>\n</head>`);
   }
