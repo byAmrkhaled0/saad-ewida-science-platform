@@ -362,8 +362,13 @@ async function getParentPortalByCode(code) {
   const normalized = normalizeCode(code);
   if (!validLegacyOrStrongCode(normalized)) throw new HttpsError('invalid-argument', 'كود غير صالح.');
   const snap = await db.collection('parent_portal').doc(cleanDocId(normalized)).get();
-  if (!snap.exists || snap.data().active === false) throw new HttpsError('not-found', 'لم يتم العثور على التقرير.');
-  return { code: normalized, data: snap.data() };
+  if (snap.exists && snap.data().active !== false) return { code: normalized, data: snap.data() };
+  // Current accounts use one code for both portals. This fallback repairs the
+  // user experience for records created before parent_portal was introduced or
+  // while an older approval function was deployed.
+  const studentSnap = await db.collection('student_portal').doc(cleanDocId(normalized)).get();
+  if (!studentSnap.exists || studentSnap.data().active === false) throw new HttpsError('not-found', 'لم يتم العثور على التقرير.');
+  return { code: normalized, data: { ...studentSnap.data(), parentCode: normalized } };
 }
 
 async function attemptSummaries(studentCode) {
@@ -406,11 +411,11 @@ exports.getPortalStudent = onCall(CALLABLE_OPTIONS, async request => {
   const found = mode === 'parent' ? await getParentPortalByCode(code) : await getStudentPortalByCode(code);
   const studentCode = found.data.studentCode || found.data.code;
   const [attempts, records, assignmentSnap, monthlyRows, onlineContent] = await Promise.all([
-    attemptSummaries(studentCode),
-    studentRecords(studentCode),
+    attemptSummaries(studentCode).catch(error => { console.warn('portal-attempts-unavailable', error?.message || error); return []; }),
+    studentRecords(studentCode).catch(error => { console.warn('portal-records-unavailable', error?.message || error); return { attendance: [], grades: [], homeworks: [], recitations: [], payments: [] }; }),
     db.collection('assignments').limit(300).get().catch(()=>null),
-    getMonthlyLeaderboardRows(),
-    loadOnlineContentForStudent(found.data, studentCode)
+    getMonthlyLeaderboardRows().catch(error => { console.warn('portal-incentive-unavailable', error?.message || error); return []; }),
+    loadOnlineContentForStudent(found.data, studentCode).catch(error => { console.warn('portal-online-content-unavailable', error?.message || error); return []; })
   ]);
   const studentMode = found.data.deliveryMode === 'online' ? 'online' : 'center';
   const assignments = assignmentSnap ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===found.data.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===studentMode)&&(!item.group||item.group==='كل المجموعات'||item.group===found.data.group)).slice(-100) : [];
@@ -892,7 +897,8 @@ exports.createBooking = onCall(CALLABLE_OPTIONS, async request => {
 exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
   const staff = await requireStaff(request);
   const bookingCode = normalizeCode(request.data && request.data.code);
-  if (!validLegacyOrStrongCode(bookingCode)) throw new HttpsError('invalid-argument', 'كود الحجز غير صالح.');
+  const bookingId = text(request.data && (request.data.bookingId || request.data.code), 40);
+  if (!validLegacyOrStrongCode(bookingCode) || !validLegacyOrStrongCode(bookingId)) throw new HttpsError('invalid-argument', 'كود الحجز غير صالح.');
 
   // Candidates also let legacy bookings be approved instead of forcing the
   // teacher to delete and recreate them. Existing V55 codes are preserved.
@@ -901,7 +907,7 @@ exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
   // only old alphanumeric bookings need a fresh fallback code.
   const fallbackStudentCode = /^\d{6,12}$/.test(bookingCode) ? bookingCode : await uniqueUnifiedAccessCode(8);
 
-  const bookingRef = db.collection('bookings').doc(cleanDocId(bookingCode));
+  const bookingRef = db.collection('bookings').doc(cleanDocId(bookingId));
   const statusRef = db.collection('booking_status').doc(cleanDocId(bookingCode));
   return db.runTransaction(async tx => {
     // The normal path needs one read only. booking_status is consulted only
@@ -944,7 +950,7 @@ exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
     tx.set(db.collection('payments').doc(studentCode), { studentCode, studentName: name, grade: student.grade, group: student.group, academicYear: student.academicYear, term: student.term, paid: false, paymentDate: '', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.set(statusRef, { ...status, code: bookingCode, name, studentName: name, studentCode, parentCode, status: 'تم القبول والتسجيل كطالب', acceptedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.delete(bookingRef);
-    tx.set(db.collection('activityLog').doc(), { action: 'تم قبول الحجز وتسجيل الطالب', meta: { bookingCode, studentCode }, actorUid: staff.uid, actorEmail: staff.email || '', actorRole: staff.role || '', createdAt: FieldValue.serverTimestamp() });
+    tx.set(db.collection('activityLog').doc(), { action: 'تم قبول الحجز وتسجيل الطالب', meta: { bookingCode, bookingId, studentCode }, actorUid: staff.uid, actorEmail: staff.email || '', actorRole: staff.role || '', createdAt: FieldValue.serverTimestamp() });
     return { ...student, bookingCode, code: studentCode, bookingDeleted: true };
   });
 });

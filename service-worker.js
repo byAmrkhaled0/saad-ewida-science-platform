@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6333-production";
+const CACHE_NAME = "mf-science-v6335-production";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
@@ -9,33 +9,17 @@ const APP_SHELL = [
   "/assets/teacher.webp", "/assets/saad-promo.webp", "/site.webmanifest"
 ];
 
-// Keep the background SDK on the same origin. A service worker must be able to
-// start without depending on a third-party CDN being reachable at that moment.
+// This same-origin bundle is built from firebase/app and firebase/messaging/sw,
+// so it targets WorkerGlobalScope and never expects a browser window object.
 try {
-  importScripts('/assets/vendor/firebase-app-compat-10.12.5.min.js');
-  importScripts('/assets/vendor/firebase-messaging-compat-10.12.5.min.js');
-  firebase.initializeApp({
+  importScripts('/assets/vendor/firebase-messaging-worker-10.12.5.min.js');
+  MFFirebaseMessagingWorker.start({
     apiKey: 'AIzaSyDG5LHrXBeyKFaN1Tmq5HjOX-nOv2z_BBA',
     authDomain: 'saad-ewida-science-platform.firebaseapp.com',
     projectId: 'saad-ewida-science-platform',
     storageBucket: 'saad-ewida-science-platform.firebasestorage.app',
     messagingSenderId: '459812644202',
     appId: '1:459812644202:web:0b02982aab7f74fdcf7113'
-  });
-  const messaging = firebase.messaging();
-  messaging.onBackgroundMessage(payload => {
-    // Notification payloads are displayed automatically by Firebase. Keep a
-    // data-only fallback for old queued messages without showing duplicates.
-    if (payload && payload.notification) return;
-    const data = payload && payload.data ? payload.data : {};
-    return self.registration.showNotification(data.title || 'حجز طالب جديد', {
-      body: data.body || 'يوجد طلب حجز جديد في لوحة المدرس.',
-      icon: '/assets/icon-192.png',
-      badge: '/assets/icon-192.png',
-      tag: data.bookingCode ? `booking-${data.bookingCode}` : 'new-booking',
-      renotify: true,
-      data: { url: data.url || '/teacher-login.html?section=bookings' }
-    });
   });
 } catch (error) {
   console.warn('firebase-background-messaging-unavailable', error && error.message ? error.message : error);

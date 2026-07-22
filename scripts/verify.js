@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
@@ -9,7 +10,7 @@ const requiredFiles = [
   'index.html', 'student.html', 'parent.html', 'exams.html', 'teacher-login.html',
   'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/teacher.webp',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
-  'assets/vendor/firebase-app-compat-10.12.5.min.js', 'assets/vendor/firebase-messaging-compat-10.12.5.min.js',
+  'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
   'functions/index.js', 'functions/lib/monthly-incentive.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
@@ -27,7 +28,7 @@ if (!failures.length) ok('Required files exist');
 const jsFiles = [
   'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
-  'assets/vendor/firebase-app-compat-10.12.5.min.js', 'assets/vendor/firebase-messaging-compat-10.12.5.min.js',
+  'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'functions/index.js', 'functions/lib/monthly-incentive.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
@@ -36,6 +37,21 @@ for (const relative of jsFiles) {
   if (result.status !== 0) fail(`JavaScript syntax failed: ${relative}\n${result.stderr}`);
 }
 if (!failures.some(x => x.startsWith('JavaScript syntax'))) ok('JavaScript syntax checks passed');
+
+try {
+  class WorkerGlobalScope {}
+  const workerContext = {
+    self: new WorkerGlobalScope(), WorkerGlobalScope, console, setTimeout, clearTimeout,
+    Promise, URL, TextEncoder, TextDecoder, Headers, Request, Response, fetch,
+    navigator: { userAgent: 'verification-worker' }
+  };
+  vm.createContext(workerContext);
+  vm.runInContext(read('assets/vendor/firebase-messaging-worker-10.12.5.min.js'), workerContext, { filename: 'firebase-messaging-worker-10.12.5.min.js' });
+  if (!workerContext.MFFirebaseMessagingWorker?.start) fail('Firebase Messaging worker bundle did not expose its WorkerGlobalScope entry point');
+} catch (error) {
+  fail(`Firebase Messaging worker bundle failed without window: ${error.message}`);
+}
+if (!failures.some(x => x.includes('Messaging worker bundle'))) ok('Firebase Messaging bundle starts without a window global');
 
 const jsonFiles = ['package.json', 'package-lock.json', 'firebase.json', 'firestore.indexes.json', 'site.webmanifest', 'teacher.webmanifest', 'vercel.json', 'functions/package.json'];
 for (const relative of jsonFiles) {
@@ -203,10 +219,12 @@ if (!read('assets/app.js').includes('toEnglishDigits') || !read('functions/index
 if (!functionsSource.includes('uniqueNumericCode') || !functionsSource.includes('studentCode, parentCode') || !read('assets/app.js').includes('كود الطالب')) fail('Immediate numeric booking access code is incomplete');
 if (!rules.includes('match /booking_status/{bookingCode}') || !rules.includes('allow read, create: if false;')) fail('Booking status documents must be server-only');
 if (!read('assets/admin.js').includes('renderSchedules') || !read('assets/admin.js').includes('startBookingNotifications')) fail('V55 schedule or booking notification UI is incomplete');
-if (!read('teacher-login.html').includes('firebase-messaging-compat.js') || !sw.includes('/assets/vendor/firebase-messaging-compat-10.12.5.min.js') || !sw.includes('onBackgroundMessage')) fail('Teacher background push notification wiring is incomplete');
-if (sw.includes("importScripts('https://")) fail('Background messaging SDK must be served locally');
+if (!read('teacher-login.html').includes('firebase-messaging-compat.js') || !sw.includes('/assets/vendor/firebase-messaging-worker-10.12.5.min.js') || !read('assets/vendor/firebase-messaging-worker-10.12.5.min.js').includes('onBackgroundMessage')) fail('Teacher background push notification wiring is incomplete');
+if (sw.includes("importScripts('https://") || /\bwindow\s*[.=]/.test(read('assets/vendor/firebase-messaging-worker-10.12.5.min.js'))) fail('Background messaging SDK must be local and WorkerGlobalScope-safe');
 if (!read('vercel.json').includes('https://apis.google.com') || !read('firebase.json').includes('https://apis.google.com')) fail('Firebase Auth CSP sources are incomplete');
 if (!read('assets/admin.js').includes('MFCloud?.approveBooking') || !read('functions/index.js').includes('tx.delete(bookingRef)')) fail('Atomic booking approval and queue removal are incomplete');
+if (!read('assets/firebase-sync.js').includes('approveBookingDirect') || !read('assets/firebase-sync.js').includes('firestoreId:doc.id') || !read('assets/admin.js').includes('bookingMatches')) fail('Booking approval fallback or real Firestore document tracking is incomplete');
+if (!read('functions/index.js').includes("db.collection('student_portal').doc(cleanDocId(normalized)).get()") || !read('functions/index.js').includes('portal-incentive-unavailable')) fail('Parent portal fallback or optional-data isolation is incomplete');
 if (/مجموعة السبت والثلاثاء|مجموعة الأحد والأربعاء|مجموعة الاثنين والخميس|أونلاين متابعة/.test(read('index.html'))) fail('Static booking groups must not appear in the booking form');
 if (!failures.some(x => x.includes('PWA') || x.includes('Service worker') || x.includes('Mobile install'))) ok('Android and iPhone PWA installation checks passed');
 
@@ -218,7 +236,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '63.3.3' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.3'") || !read('service-worker.js').includes('mf-science-v6333-production')) fail('V63 version and cache identifiers are not unified');
+if (packageInfo.version !== '63.3.5' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.5'") || !read('service-worker.js').includes('mf-science-v6335-production')) fail('V63 version and cache identifiers are not unified');
 for (const feature of ['renderMonthlyPaymentsV63','renderExamsManagerV63','renderAssignmentsManagerV63','renderOnlineManagerV63','renderReports','renderSettings','openStudentEditModal']) {
   if (!adminSourceCode.includes(feature) && feature !== 'openStudentEditModal') fail(`V63 administration feature is missing: ${feature}`);
 }

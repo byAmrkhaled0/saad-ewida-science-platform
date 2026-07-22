@@ -234,7 +234,7 @@
 
     async function getDocs(collection,limit){
       const ref=limit?db.collection(collection).limit(limit):db.collection(collection);
-      const snap=await ref.get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));
+      const snap=await ref.get();return snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id}));
     }
     async function getSettings(){const snap=await platformSettingsDoc.get().catch(()=>null);return snap?.exists?snap.data():{};}
     async function getApprovedReviews(){const snap=await db.collection('reviews').where('approved','==',true).limit(100).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));}
@@ -330,6 +330,38 @@
       if(!studentCode)throw new Error('تعذر إنشاء كود موحد جديد');
       const source=normalizedStudent({...student,studentCode,code:studentCode,parentCode,active:student?.active!==false});
       const ops=[];pushStudentOps(ops,source);await commitOperations(ops);return {...studentProfile(source),studentCode,code:studentCode,parentCode};
+    }
+
+    async function approveBookingDirect(input){
+      const profile=await getCurrentStaffProfile();
+      if(!profile?.allowed||!['admin','teacher'].includes(profile.role))throw new Error('Not authorized');
+      const source=input&&typeof input==='object'?input:{code:input};
+      const bookingCode=normalizeCode(source.code||source.id||source.firestoreId||'');
+      const bookingId=cleanDocId(source.firestoreId||source.id||bookingCode);
+      if(!bookingCode||!bookingId)throw new Error('Invalid booking code');
+      let fallbackCode=/^\d{6,12}$/.test(normalizeCode(source.studentCode||bookingCode))?normalizeCode(source.studentCode||bookingCode):'';
+      for(let i=0;i<12&&!fallbackCode;i+=1){const candidate=randomNumericAccessCode();const snap=await db.collection('students').doc(candidate).get();if(!snap.exists)fallbackCode=candidate;}
+      if(!fallbackCode)throw new Error('تعذر إنشاء كود موحد جديد');
+      const bookingRef=db.collection('bookings').doc(bookingId);
+      const created=await db.runTransaction(async tx=>{
+        const snap=await tx.get(bookingRef);
+        if(!snap.exists)throw new Error('Booking not found');
+        const booking={...snap.data(),...source,firestoreId:bookingId};
+        const studentCode=/^\d{6,12}$/.test(normalizeCode(booking.studentCode||''))?normalizeCode(booking.studentCode):fallbackCode;
+        const parentCode=studentCode,name=String(booking.studentName||booking.name||'').trim();
+        const student=normalizedStudent({...booking,id:studentCode,code:studentCode,studentCode,parentCode,name,studentName:name,bookingCode,paid:false,paymentDate:'',active:true,approvalStatus:'تم القبول والتسجيل كطالب'});
+        const body=studentProfile(student),id=cleanDocId(studentCode);
+        tx.set(db.collection('students').doc(id),{...body,bookingCode,acceptedAt:serverTime(),updatedAt:serverTime()},{merge:true});
+        tx.set(db.collection('student_portal').doc(id),{...body,active:true,updatedAt:serverTime()},{merge:true});
+        tx.set(db.collection('parent_portal').doc(id),{...body,parentCode,active:true,updatedAt:serverTime()},{merge:true});
+        tx.set(db.collection('payments').doc(id),{studentId:id,studentCode,studentName:name,grade:body.grade,group:body.group,academicYear:body.academicYear,term:body.term,paid:false,paymentDate:'',updatedAt:serverTime()},{merge:true});
+        tx.delete(bookingRef);
+        return {...body,bookingCode,code:studentCode,studentCode,parentCode,bookingDeleted:true,directFallback:true};
+      });
+      // New bookings already have this status document. Legacy rows might not;
+      // a denied best-effort status update must not undo the atomic queue move.
+      await db.collection('booking_status').doc(cleanDocId(bookingCode)).set({code:bookingCode,studentCode:created.studentCode,parentCode:created.parentCode,name:created.name,studentName:created.name,status:'تم القبول والتسجيل كطالب',updatedAt:serverTime()},{merge:true}).catch(error=>console.warn('booking-status-direct-update',error));
+      return created;
     }
 
     async function upsertAttendance(record){
@@ -504,12 +536,17 @@
         if(!calls.createBooking)throw new Error('Secure booking function is unavailable');
         return retryTransient(()=>calls.createBooking(booking),1);
       },
-      approveBooking:async code=>{
-        if(!calls.approveBooking)throw new Error('Secure booking approval function is unavailable');
-        return retryTransient(()=>calls.approveBooking({code:normalizeCode(code)}),1);
+      approveBooking:async input=>{
+        const source=input&&typeof input==='object'?input:{code:input};
+        const code=normalizeCode(source.code||source.id||source.firestoreId||'');
+        const bookingId=String(source.firestoreId||source.id||code).trim();
+        let callableError=null;
+        if(calls.approveBooking){try{return await retryTransient(()=>calls.approveBooking({code,bookingId}),1);}catch(error){callableError=error;}}
+        try{return await approveBookingDirect({...source,code,firestoreId:bookingId});}
+        catch(error){error.callableError=callableError;throw callableError||error;}
       },
       rejectBooking:async code=>{if(!calls.rejectBooking)throw new Error('Secure booking rejection function is unavailable');return calls.rejectBooking({code:normalizeCode(code)});},
-      subscribeToBookings:handler=>db.collection('bookings').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>handler(snap.docs.map(doc=>({id:doc.id,...doc.data()})),snap.docChanges()),error=>console.warn('booking-listener',error)),
+      subscribeToBookings:handler=>db.collection('bookings').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>handler(snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id})),snap.docChanges()),error=>console.warn('booking-listener',error)),
       registerTeacherPushToken:async()=>{if(!cfg.messagingVapidKey||!firebase.messaging||!calls.registerTeacherPushToken)throw new Error('VAPID_KEY_REQUIRED');const registration=await navigator.serviceWorker.ready;const token=await firebase.messaging().getToken({vapidKey:cfg.messagingVapidKey,serviceWorkerRegistration:registration});if(!token)throw new Error('TOKEN_UNAVAILABLE');return calls.registerTeacherPushToken({token,userAgent:navigator.userAgent});},
       getBookingStatus:async code=>{
         const normalized=normalizeCode(code);

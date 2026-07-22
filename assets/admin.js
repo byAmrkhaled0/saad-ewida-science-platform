@@ -261,7 +261,7 @@ function renderAdmin(){
 }
 
 window.enableBookingNotifications=async function(){if(!('Notification' in window))return aToast('المتصفح لا يدعم إشعارات الهاتف');const permission=await Notification.requestPermission();if(permission!=='granted')return aToast('اسمح بالإشعارات من إعدادات المتصفح');localStorage.setItem('mf-booking-notifications','1');startBookingNotifications();try{await window.MFCloud?.registerTeacherPushToken?.();aToast('تم تفعيل التنبيهات حتى عند إغلاق اللوحة');}catch(error){aToast('تم تفعيل تنبيهات الحجوزات أثناء فتح لوحة الإدارة');}};
-function startBookingNotifications(){if(bookingNotificationUnsubscribe||!window.MFCloud?.subscribeToBookings)return;bookingNotificationUnsubscribe=window.MFCloud.subscribeToBookings((rows,changes)=>{adminData.bookings=rows.filter(isPendingBooking);saveData(adminData);if(bookingListenerReady){changes.filter(change=>change.type==='added').forEach(change=>{const b=change.doc.data();const code=String(b.code||change.doc.id||'');if(!isPendingBooking({...b,id:change.doc.id}))return;aToast(`حجز جديد: ${b.name||b.studentName||'طالب جديد'}`);if(Notification.permission==='granted'&&localStorage.getItem('mf-booking-notifications')==='1'){const n=new Notification('حجز طالب جديد',{body:`${b.name||b.studentName||''} · ${b.grade||''} · ${b.group||''}`,icon:'assets/icon-192.png',tag:`booking-${code}`});n.onclick=()=>{window.focus();goAdminSection('bookings');};}});}bookingListenerReady=true;if(currentSection==='bookings'&&!bookingActionPending.size)renderBookings();});}
+function startBookingNotifications(){if(bookingNotificationUnsubscribe||!window.MFCloud?.subscribeToBookings)return;bookingNotificationUnsubscribe=window.MFCloud.subscribeToBookings((rows,changes)=>{adminData.bookings=rows.filter(isPendingBooking);saveData(adminData);if(bookingListenerReady){changes.filter(change=>change.type==='added').forEach(change=>{const b={...change.doc.data(),id:change.doc.id,firestoreId:change.doc.id};const code=bookingKey(b);if(!isPendingBooking(b))return;aToast(`حجز جديد: ${b.name||b.studentName||'طالب جديد'}`);if(Notification.permission==='granted'&&localStorage.getItem('mf-booking-notifications')==='1'){const n=new Notification('حجز طالب جديد',{body:`${b.name||b.studentName||''} · ${b.grade||''} · ${b.group||''}`,icon:'assets/icon-192.png',tag:`booking-${code}`});n.onclick=()=>{window.focus();goAdminSection('bookings');};}});}bookingListenerReady=true;if(currentSection==='bookings'&&!bookingActionPending.size)renderBookings();});}
 
 function bindNav(){
   document.querySelectorAll('[data-admin-nav]').forEach(btn=>{btn.onclick=()=>goAdminSection(btn.dataset.adminNav);});
@@ -348,8 +348,10 @@ window.upgradeLegacyAccessCodes=async function(){
   saveData(adminData);aToast(failed?`تم توحيد ${success} وتعذر ${failed}${cleanupFailed?`، ويوجد ${cleanupFailed} كود قديم يحتاج تنظيف`:''}`:`تم توحيد أكواد ${success} طالب بنجاح`);renderStudents();
 };
 
+function bookingKey(booking){return String(booking?.firestoreId||booking?.id||booking?.code||'');}
+function bookingMatches(booking,value){const wanted=String(value||'');return [booking?.firestoreId,booking?.id,booking?.code].some(item=>String(item||'')===wanted);}
 function isPendingBooking(booking){
-  const code=String(booking?.code||booking?.id||'');
+  const code=bookingKey(booking);
   const status=String(booking?.status||booking?.approvalStatus||'').trim().toLowerCase();
   const finished=/تم\s*(?:القبول|الرفض)|مقبول|مرفوض|approved|accepted|rejected/.test(status);
   return Boolean(code)&&!finished&&!bookingActionPending.has(code)&&!acceptedBookingCodes.has(code);
@@ -364,38 +366,38 @@ window.editSchedule=function(id){const g=(adminData.groups||[]).find(x=>String(x
 window.toggleSchedule=async function(id){const g=(adminData.groups||[]).find(x=>String(x.id)===String(id));if(!g)return;g.active=g.active===false;persist(g.active?'تم تفعيل الموعد':'تم إيقاف الموعد');try{await window.MFCloud?.saveGroup?.(g);}catch(e){}renderSchedules();};
 async function saveSchedule(event){event.preventDefault();const form=event.currentTarget,data=Object.fromEntries(new FormData(form).entries());data.id=data.id||`group-${Date.now()}`;data.active=form.active.checked;const index=(adminData.groups||[]).findIndex(x=>String(x.id)===String(data.id));if(index>=0)adminData.groups[index]={...adminData.groups[index],...data};else adminData.groups.push(data);persist('تم حفظ الموعد');try{await window.MFCloud?.saveGroup?.(data);}catch(e){aToast('تم الحفظ محليًا وتعذرت المزامنة الآن');}renderSchedules();}
 window.refreshBookingsTable=function(){let rows=pendingBookings();const query=(document.getElementById('bookingSearchAdmin')?.value||'').trim().toLowerCase(),grade=document.getElementById('bookingGradeAdmin')?.value||'all';if(query)rows=rows.filter(b=>[b.code,b.name,b.studentName,b.parentPhone,b.studentPhone].some(value=>String(value||'').toLowerCase().includes(query)));if(grade!=='all')rows=rows.filter(b=>b.grade===grade);const box=document.getElementById('bookingRowsAdmin');if(box)box.innerHTML=rows.map(bookingCard).join('')||'<div class="empty-state"><h3>لا توجد نتائج</h3><p>غيّر البحث أو الصف.</p></div>';};
-function bookingCard(b){const mode=studentMode(b);return `<article class="booking-admin-card compact-booking-card" data-booking-code="${safe(b.code||b.id)}"><div class="compact-booking-main"><span class="student-avatar">${safe(String(b.name||b.studentName||'ط').charAt(0))}</span><div><div class="compact-booking-title"><h3>${safe(b.name||b.studentName)}</h3><span class="badge ${mode==='online'?'online-mode':'good'}">${mode==='online'?'أونلاين':'سنتر'}</span><span class="badge warn">قيد التسجيل</span></div><small>${safe(b.code)} · ${safe(b.grade)} · ${safe(b.group)}</small></div></div><div class="compact-booking-meta"><span><small>الطالب</small><b dir="ltr">${safe(b.studentPhone||'-')}</b></span><span><small>ولي الأمر</small><b dir="ltr">${safe(b.parentPhone||'-')}</b></span><span><small>الشهر</small><b>${safe(b.month||'-')}</b></span></div><div class="compact-booking-actions"><button class="small-btn primary" type="button" onclick="approveBooking('${safe(b.code)}')"><span data-icon="user-check"></span> قبول</button><button class="small-btn danger" type="button" onclick="deleteBooking('${safe(b.code)}')"><span data-icon="trash"></span> رفض</button></div></article>`;}
+function bookingCard(b){const mode=studentMode(b),key=bookingKey(b);return `<article class="booking-admin-card compact-booking-card" data-booking-code="${safe(key)}"><div class="compact-booking-main"><span class="student-avatar">${safe(String(b.name||b.studentName||'ط').charAt(0))}</span><div><div class="compact-booking-title"><h3>${safe(b.name||b.studentName)}</h3><span class="badge ${mode==='online'?'online-mode':'good'}">${mode==='online'?'أونلاين':'سنتر'}</span><span class="badge warn">قيد التسجيل</span></div><small>${safe(b.code||key)} · ${safe(b.grade)} · ${safe(b.group)}</small></div></div><div class="compact-booking-meta"><span><small>الطالب</small><b dir="ltr">${safe(b.studentPhone||'-')}</b></span><span><small>ولي الأمر</small><b dir="ltr">${safe(b.parentPhone||'-')}</b></span><span><small>الشهر</small><b>${safe(b.month||'-')}</b></span></div><div class="compact-booking-actions"><button class="small-btn primary" type="button" onclick="approveBooking('${safe(key)}')"><span data-icon="user-check"></span> قبول</button><button class="small-btn danger" type="button" onclick="deleteBooking('${safe(key)}')"><span data-icon="trash"></span> رفض</button></div></article>`;}
 window.approveBooking=async function(code){
   code=String(code||'');
   if(bookingActionPending.has(code)||acceptedBookingCodes.has(code))return false;
-  const b=adminData.bookings.find(x=>String(x.code||x.id)===code);if(!b)return false;
+  const b=adminData.bookings.find(x=>bookingMatches(x,code));if(!b)return false;
   bookingActionPending.add(code);
   const card=document.querySelector(`[data-booking-code="${CSS.escape(code)}"]`);
   card?.classList.add('is-processing');
   card?.querySelectorAll('button').forEach(button=>button.disabled=true);
-  adminData.bookings=adminData.bookings.filter(item=>String(item.code||item.id)!==code);
+  adminData.bookings=adminData.bookings.filter(item=>!bookingMatches(item,code));
   saveData(adminData);
   requestAnimationFrame(()=>{card?.remove();const count=document.querySelector('.booking-admin-summary .big-num');if(count)count.textContent=String(pendingBookings().length);});
   try{
-    const created=await window.MFCloud?.approveBooking?.(code);
+    const created=await window.MFCloud?.approveBooking?.(b);
     if(!created?.studentCode||!created?.parentCode)throw new Error('تعذر إنشاء الأكواد');
     let student=adminData.students.find(s=>stCode(s)===created.studentCode||String(s.bookingCode||'')===String(code));
-    const data={...b,...created,bookingCode:code,deliveryMode:(created.deliveryMode||b.deliveryMode)==='online'?'online':'center',studentName:created.studentName||created.name||b.studentName||b.name,name:created.name||created.studentName||b.name,studentPhone:phoneDigits(created.studentPhone||b.studentPhone),parentPhone:phoneDigits(created.parentPhone||b.parentPhone),paid:false,active:true,attendance:student?.attendance||[],grades:student?.grades||[],homeworks:student?.homeworks||[],recitations:student?.recitations||[]};
+    const data={...b,...created,bookingCode:created.bookingCode||b.code||code,deliveryMode:(created.deliveryMode||b.deliveryMode)==='online'?'online':'center',studentName:created.studentName||created.name||b.studentName||b.name,name:created.name||created.studentName||b.name,studentPhone:phoneDigits(created.studentPhone||b.studentPhone),parentPhone:phoneDigits(created.parentPhone||b.parentPhone),paid:false,active:true,attendance:student?.attendance||[],grades:student?.grades||[],homeworks:student?.homeworks||[],recitations:student?.recitations||[]};
     if(student)Object.assign(student,data);else{student=data;adminData.students.push(student);}
     acceptedBookingCodes.add(code);
-    adminData.bookings=adminData.bookings.filter(item=>String(item.code||item.id)!==code);
+    adminData.bookings=adminData.bookings.filter(item=>!bookingMatches(item,code));
     saveData(adminData);
     // The callable removes the queue document atomically. This idempotent
     // cleanup also protects dashboards that are still connected to an older
     // function revision and prevents an accepted request returning on reload.
-    try{await window.MFCloud?.deleteDocument?.('bookings',code);}catch(cleanupError){console.warn('approved-booking-cleanup',cleanupError);}
+    try{await window.MFCloud?.deleteDocument?.('bookings',b.firestoreId||b.id||code);}catch(cleanupError){console.warn('approved-booking-cleanup',cleanupError);}
     aToast('تم قبول الحجز ونقل الطالب إلى قائمة الطلاب');
     if(currentSection==='bookings')renderBookings();
     return true;
   }catch(error){adminData.bookings.unshift(b);saveData(adminData);renderBookings();const raw=String(error?.code||'')+' '+String(error?.message||'');const message=/unauthenticated/i.test(raw)?'انتهت جلسة الدخول. سجّل دخول المدرس من جديد.':/permission-denied/i.test(raw)?'حساب المدرس غير مفعّل أو لا يملك صلاحية القبول.':/not-found/i.test(raw)?'الحجز غير موجود أو تم التعامل معه بالفعل.':/internal|unavailable|function.*unavailable/i.test(raw)?'خدمة قبول الحجز غير متاحة حاليًا.':(error?.message?.split(':').pop()?.trim()||'تعذر قبول الحجز.');aToast(message);return false;}
   finally{bookingActionPending.delete(code);}
 };
-window.deleteBooking=async function(code){if(!confirm('رفض الحجز وإيقاف الأكواد التي صدرت له؟'))return;try{await window.MFCloud?.rejectBooking?.(code);adminData.bookings=adminData.bookings.filter(b=>String(b.code||b.id)!==String(code));saveData(adminData);aToast('تم رفض الحجز وإيقاف الأكواد');deferAdminRender(renderBookings);}catch(error){const raw=String(error?.code||'')+' '+String(error?.message||'');const message=/unauthenticated/i.test(raw)?'انتهت جلسة الدخول. سجّل الدخول من جديد.':/permission-denied/i.test(raw)?'الحساب لا يملك صلاحية رفض الحجوزات.':/not-found/i.test(raw)?'الحجز غير موجود أو تم التعامل معه بالفعل.':/internal|unavailable|function.*unavailable/i.test(raw)?'خدمة رفض الحجز غير متاحة حاليًا.':(error?.message?.split(':').pop()?.trim()||'تعذر رفض الحجز.');aToast(message);}};
+window.deleteBooking=async function(code){if(!confirm('رفض الحجز وإيقاف الأكواد التي صدرت له؟'))return;try{await window.MFCloud?.rejectBooking?.(code);adminData.bookings=adminData.bookings.filter(b=>!bookingMatches(b,code));saveData(adminData);aToast('تم رفض الحجز وإيقاف الأكواد');deferAdminRender(renderBookings);}catch(error){const raw=String(error?.code||'')+' '+String(error?.message||'');const message=/unauthenticated/i.test(raw)?'انتهت جلسة الدخول. سجّل الدخول من جديد.':/permission-denied/i.test(raw)?'الحساب لا يملك صلاحية رفض الحجوزات.':/not-found/i.test(raw)?'الحجز غير موجود أو تم التعامل معه بالفعل.':/internal|unavailable|function.*unavailable/i.test(raw)?'خدمة رفض الحجز غير متاحة حاليًا.':(error?.message?.split(':').pop()?.trim()||'تعذر رفض الحجز.');aToast(message);}};
 
 function findAttendance(st,date){return (st.attendance||[]).find(a=>String(a.date)===date);}
 function classProgressRows(st,type){return type==='recitation'?(st.recitations||[]):(st.homeworks||[]);}

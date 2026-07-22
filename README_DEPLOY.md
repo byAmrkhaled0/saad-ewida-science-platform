@@ -1,4 +1,19 @@
-# نشر الإصدار 63.3.3
+# نشر الإصدار 63.3.5
+
+## صلاحيات حساب تشغيل Cloud Functions — مرة واحدة
+
+نفّذ الأمرين التاليين في Google Cloud Shell قبل اختبار بوابة الطالب أو ولي الأمر. سجل التشغيل الفعلي هو:
+
+```text
+459812644202-compute@developer.gserviceaccount.com
+```
+
+```bash
+gcloud projects add-iam-policy-binding saad-ewida-science-platform --member="serviceAccount:459812644202-compute@developer.gserviceaccount.com" --role="roles/datastore.user"
+gcloud projects add-iam-policy-binding saad-ewida-science-platform --member="serviceAccount:459812644202-compute@developer.gserviceaccount.com" --role="roles/firebasecloudmessaging.admin"
+```
+
+الدور الأول إلزامي لقراءة وكتابة Firestore من Cloud Functions. الدور الثاني مطلوب لإرسال إشعارات الحجز في الخلفية.
 
 من داخل مجلد المشروع:
 
