@@ -1,19 +1,19 @@
 param(
   [string]$RepositoryUrl = "https://github.com/byAmrkhaled0/saad-ewida-science-platform.git",
-  [string]$TargetFolder = "saad-ewida-production-v63.2"
+  [string]$TargetFolder = "saad-ewida-production-v63.3.2"
 )
 
 $ErrorActionPreference = "Stop"
 
 function Invoke-Checked {
   param(
-    [Parameter(Mandatory = $true)][string]$Command,
-    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
+    [Parameter(Mandatory = $true)][string]$Executable,
+    [string[]]$CommandArguments = @()
   )
 
-  & $Command @Arguments
+  & $Executable @CommandArguments
   if ($LASTEXITCODE -ne 0) {
-    throw "Command failed with exit code ${LASTEXITCODE}: $Command $($Arguments -join ' ')"
+    throw "Command failed with exit code ${LASTEXITCODE}: $Executable $($CommandArguments -join ' ')"
   }
 }
 
@@ -26,9 +26,9 @@ if (Test-Path $TargetRoot) {
 }
 
 Write-Host "Cloning the existing GitHub repository..." -ForegroundColor Cyan
-Invoke-Checked git clone $RepositoryUrl $TargetRoot
+Invoke-Checked -Executable "git" -CommandArguments @("clone", $RepositoryUrl, $TargetRoot)
 
-Write-Host "Replacing repository files with V63.2 while preserving .git..." -ForegroundColor Cyan
+Write-Host "Replacing repository files with V63.3.2 while preserving .git..." -ForegroundColor Cyan
 Get-ChildItem -LiteralPath $TargetRoot -Force |
   Where-Object { $_.Name -ne ".git" } |
   Remove-Item -Recurse -Force

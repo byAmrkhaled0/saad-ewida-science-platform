@@ -77,8 +77,8 @@ for (const [name, locations] of inlineHandlers) {
 }
 if (!failures.some(x => x.startsWith('Missing button handler'))) ok(`All ${inlineHandlers.size} inline action handlers are defined`);
 
-if (!read('assets/firebase-config.js').includes('appCheckSiteKey') || !read('assets/firebase-sync.js').includes('firebase.appCheck')) fail('Optional Firebase App Check initialization is missing');
-else ok('Firebase App Check is ready for gradual activation');
+if (read('assets/firebase-config.js').includes('appCheckSiteKey') || read('assets/firebase-sync.js').includes('firebase.appCheck') || read('scripts/build.js').includes('firebase-app-check-compat.js')) fail('Firebase App Check/reCAPTCHA must remain disabled');
+else ok('Firebase App Check and reCAPTCHA are disabled');
 
 const syncSource = read('assets/firebase-sync.js');
 if (/createBookingDirect|createReviewDirect/.test(syncSource)) fail('A public direct-write fallback still exists for booking or reviews');
@@ -201,7 +201,7 @@ if (!read('assets/app.js').includes('toEnglishDigits') || !read('functions/index
 if (!functionsSource.includes('uniqueNumericCode') || !functionsSource.includes('studentCode, parentCode') || !read('assets/app.js').includes('كود الطالب')) fail('Immediate numeric booking access code is incomplete');
 if (!rules.includes('match /booking_status/{bookingCode}') || !rules.includes('allow read, create: if false;')) fail('Booking status documents must be server-only');
 if (!read('assets/admin.js').includes('renderSchedules') || !read('assets/admin.js').includes('startBookingNotifications')) fail('V55 schedule or booking notification UI is incomplete');
-if (!read('teacher-login.html').includes('firebase-messaging-compat.js') || (!sw.includes('onBackgroundMessage') && !sw.includes('VAPID key is not configured'))) fail('Teacher background push notification wiring is incomplete');
+if (!read('teacher-login.html').includes('firebase-messaging-compat.js') || !sw.includes('firebase-messaging-compat.js') || !sw.includes('onBackgroundMessage')) fail('Teacher background push notification wiring is incomplete');
 if (!read('assets/admin.js').includes('MFCloud?.approveBooking') || !read('functions/index.js').includes('tx.delete(bookingRef)')) fail('Atomic booking approval and queue removal are incomplete');
 if (/مجموعة السبت والثلاثاء|مجموعة الأحد والأربعاء|مجموعة الاثنين والخميس|أونلاين متابعة/.test(read('index.html'))) fail('Static booking groups must not appear in the booking form');
 if (!failures.some(x => x.includes('PWA') || x.includes('Service worker') || x.includes('Mobile install'))) ok('Android and iPhone PWA installation checks passed');
@@ -214,7 +214,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '63.3.1' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.1'") || !read('service-worker.js').includes('mf-science-v6331-production')) fail('V63 version and cache identifiers are not unified');
+if (packageInfo.version !== '63.3.2' || !read('assets/app.js').includes("MF_ASSET_VERSION = '63.3.2'") || !read('service-worker.js').includes('mf-science-v6332-production')) fail('V63 version and cache identifiers are not unified');
 for (const feature of ['renderMonthlyPaymentsV63','renderExamsManagerV63','renderAssignmentsManagerV63','renderOnlineManagerV63','renderReports','renderSettings','openStudentEditModal']) {
   if (!adminSourceCode.includes(feature) && feature !== 'openStudentEditModal') fail(`V63 administration feature is missing: ${feature}`);
 }

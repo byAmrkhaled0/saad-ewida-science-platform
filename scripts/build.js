@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '63.3.1';
+const release = '63.3.2';
 const seoPages = {
   'index.html': ['الأستاذ سعد عويضة | أحياء وعلوم وعلوم متكاملة', 'منصة الأستاذ سعد عويضة لشرح الأحياء والعلوم والعلوم المتكاملة: حجز، محاضرات أونلاين، تسجيلات، مراجعات، امتحانات ومتابعة دقيقة للطالب.'],
   'services.html': ['خدمات الأستاذ سعد عويضة التعليمية | أحياء وعلوم', 'تعرف على خدمات الأستاذ سعد عويضة: شرح مبسط، محاضرات مباشرة، تسجيلات، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -70,9 +70,6 @@ function escapeAttr(value) {
 for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) {
   const filePath = path.join(dist, file);
   let html = fs.readFileSync(filePath, 'utf8');
-  if (html.includes('firebase-app-compat.js') && !html.includes('firebase-app-check-compat.js')) {
-    html = html.replace(/(<script defer src="https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.5\/firebase-app-compat\.js"><\/script>)/, '$1\n<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>');
-  }
   const fallbackTitle = (html.match(/<title>([^<]*)<\/title>/i) || [,'منصة الأستاذ سعد عويضة'])[1];
   const existingDescription = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [,'منصة الأستاذ سعد عويضة التعليمية.'])[1];
   const [title, description] = seoPages[file] || [fallbackTitle, existingDescription];

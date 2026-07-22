@@ -18,7 +18,6 @@
 
   try{
     const app=firebase.apps&&firebase.apps.length?firebase.app():firebase.initializeApp(cfg);
-    if(cfg.appCheckSiteKey&&firebase.appCheck){try{firebase.appCheck().activate(cfg.appCheckSiteKey,true);}catch(error){console.warn('app-check-init',error);}}
     const auth=firebase.auth();
     const db=firebase.firestore();
     const storage=firebase.storage();

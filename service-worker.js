@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6331-production";
+const CACHE_NAME = "mf-science-v6332-production";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
@@ -9,13 +9,50 @@ const APP_SHELL = [
   "/assets/teacher.webp", "/assets/saad-promo.webp", "/site.webmanifest"
 ];
 
-// Background Messaging is intentionally not imported from a third-party CDN
-// here. The public VAPID key is not configured yet, and a failed importScripts
-// used to make the PWA worker noisy and unreliable on restricted networks.
+// Firebase Messaging runs in this same worker so notifications continue while
+// the teacher dashboard is closed. If the CDN is temporarily unavailable the
+// PWA cache/fallback still starts normally.
+try {
+  importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
+  importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
+  firebase.initializeApp({
+    apiKey: 'AIzaSyDG5LHrXBeyKFaN1Tmq5HjOX-nOv2z_BBA',
+    authDomain: 'saad-ewida-science-platform.firebaseapp.com',
+    projectId: 'saad-ewida-science-platform',
+    storageBucket: 'saad-ewida-science-platform.firebasestorage.app',
+    messagingSenderId: '459812644202',
+    appId: '1:459812644202:web:0b02982aab7f74fdcf7113'
+  });
+  const messaging = firebase.messaging();
+  messaging.onBackgroundMessage(payload => {
+    // Notification payloads are displayed automatically by Firebase. Keep a
+    // data-only fallback for old queued messages without showing duplicates.
+    if (payload && payload.notification) return;
+    const data = payload && payload.data ? payload.data : {};
+    return self.registration.showNotification(data.title || 'حجز طالب جديد', {
+      body: data.body || 'يوجد طلب حجز جديد في لوحة المدرس.',
+      icon: '/assets/icon-192.png',
+      badge: '/assets/icon-192.png',
+      tag: data.bookingCode ? `booking-${data.bookingCode}` : 'new-booking',
+      renotify: true,
+      data: { url: data.url || '/teacher-login.html?section=bookings' }
+    });
+  });
+} catch (error) {
+  console.warn('firebase-background-messaging-unavailable', error && error.message ? error.message : error);
+}
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || '/teacher-login.html?section=bookings'));
+  const target = event.notification.data?.url || '/teacher-login.html?section=bookings';
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(openClients => {
+    const existing = openClients.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      existing.navigate(target);
+      return existing.focus();
+    }
+    return clients.openWindow(target);
+  }));
 });
 
 self.addEventListener("install", event => {

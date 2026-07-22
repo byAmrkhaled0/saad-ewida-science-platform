@@ -172,10 +172,24 @@ async function notifyStaffAboutBooking(booking) {
   const snap = await db.collection('staff_push_tokens').where('active', '==', true).limit(500).get();
   const tokens = [...new Set(snap.docs.map(doc => text(doc.data().token, 500)).filter(Boolean))];
   if (!tokens.length) return;
+  const bookingCode = text(booking.code, 40);
+  const title = 'حجز طالب جديد';
+  const body = `${text(booking.name, 80)} · ${text(booking.grade, 60)} · ${text(booking.group, 80)}`;
+  const targetUrl = 'https://saad-ewida-science-platform.vercel.app/teacher-login.html?section=bookings';
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
-    data: { type: 'new-booking', bookingCode: text(booking.code, 40), title: 'حجز طالب جديد', body: `${text(booking.name, 80)} · ${text(booking.grade, 60)} · ${text(booking.group, 80)}` },
-    webpush: { fcmOptions: { link: '/teacher-login.html?section=bookings' } }
+    data: { type: 'new-booking', bookingCode, title, body, url: targetUrl },
+    webpush: {
+      notification: {
+        title,
+        body,
+        icon: 'https://saad-ewida-science-platform.vercel.app/assets/icon-192.png',
+        badge: 'https://saad-ewida-science-platform.vercel.app/assets/icon-192.png',
+        tag: `booking-${bookingCode}`,
+        renotify: true
+      },
+      fcmOptions: { link: targetUrl }
+    }
   });
   const invalid = [];
   response.responses.forEach((item, index) => {
@@ -896,7 +910,7 @@ exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
     if (!bookingSnap.exists) {
       const statusSnap = await tx.get(statusRef);
       const status = statusSnap.exists ? statusSnap.data() : {};
-      if (String(status.status || '').includes('القبول')) return { ...status, bookingCode, code: status.studentCode, alreadyApproved: true };
+    if (String(status.status || '').includes('القبول')) return { ...status, bookingCode, code: status.studentCode, alreadyApproved: true, bookingDeleted: true };
       throw new HttpsError('not-found', 'الحجز غير موجود أو تم التعامل معه من قبل.');
     }
     const status = {};
@@ -931,7 +945,7 @@ exports.approveBooking = onCall(CALLABLE_OPTIONS, async request => {
     tx.set(statusRef, { ...status, code: bookingCode, name, studentName: name, studentCode, parentCode, status: 'تم القبول والتسجيل كطالب', acceptedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.delete(bookingRef);
     tx.set(db.collection('activityLog').doc(), { action: 'تم قبول الحجز وتسجيل الطالب', meta: { bookingCode, studentCode }, actorUid: staff.uid, actorEmail: staff.email || '', actorRole: staff.role || '', createdAt: FieldValue.serverTimestamp() });
-    return { ...student, bookingCode, code: studentCode };
+    return { ...student, bookingCode, code: studentCode, bookingDeleted: true };
   });
 });
 
