@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const requiredFiles = [
   'index.html', 'student.html', 'parent.html', 'exams.html', 'teacher-login.html',
-  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/critical-home.css',
+  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/teacher-768.webp', 'assets/critical-home.css',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
@@ -262,7 +262,7 @@ if (manifest.display !== 'standalone' || manifest.scope !== '/' || !Array.isArra
 if (!manifest.icons.some(icon => String(icon.purpose || '').includes('maskable') && icon.sizes === '512x512')) fail('Maskable PWA icon is missing');
 const sw = read('service-worker.js');
 const appShellSource = sw.slice(0,sw.indexOf('];')+2);
-if (!/mf-science-v\d+-(?:production|performance)/.test(sw) || !sw.includes('/assets/platform.js') || !sw.includes('/assets/icon-maskable-512.png')) fail('Service worker app shell is incomplete');
+if (!/mf-science-v\d+-(?:production|performance|ui-performance)/.test(sw) || !sw.includes('/assets/platform.js') || !sw.includes('/assets/icon-maskable-512.png')) fail('Service worker app shell is incomplete');
 if (/assets\/vendor/.test(appShellSource) || !/teacher-login\.html/.test(appShellSource) || !/teacher\.webmanifest/.test(appShellSource) || /assets\/admin-platform\.js/.test(appShellSource) || !sw.includes('event.waitUntil(network.catch')) fail('Teacher PWA shell or repeat-visit caching is incomplete');
 const teacherManifest=JSON.parse(read('teacher.webmanifest'));
 if (teacherManifest.id !== '/teacher-login.html' || teacherManifest.start_url !== '/teacher-login.html' || teacherManifest.scope !== '/') fail('Teacher PWA launch route is invalid');
@@ -273,7 +273,8 @@ if (!appSourceCode.includes('item.notes].filter(Boolean)') || !adminSourceCode.i
 if (read('teacher-login.html').includes('jspdf.umd.min.js') || read('parent.html').includes('jspdf.umd.min.js') || !appSourceCode.includes("loadLazyScript('jspdf'")) fail('PDF library is not lazy-loaded');
 if (appSourceCode.includes('/functions\\\\/not-found|function.*unavailable/') || !appSourceCode.includes("if(/not-found/i.test(raw))return 'الكود غير صحيح أو غير موجود.'")) fail('Firebase not-found errors are mislabeled as an unavailable service');
 if (!read('index.html').includes('<script defer src="https://www.gstatic.com/firebasejs/')) fail('Firebase scripts are not downloaded in parallel with deferred execution');
-if (!read('index.html').includes('<b>9</b><small>صفوف دراسية</small>') || !read('index.html').includes('teacher-480.webp 480w')) fail('Home grade count or responsive LCP image is incomplete');
+if (!read('index.html').includes('<b>9</b><small>صفوف دراسية</small>') || !read('index.html').includes('teacher-480.webp 480w') || !read('index.html').includes('teacher-768.webp 768w')) fail('Home grade count or responsive LCP image is incomplete');
+if (/class="floating-card/.test(read('index.html')) || /متابعة مستمرة<\/div>/.test(read('index.html'))) fail('Decorative teacher-image cards can overlap the portrait');
 if (!read('scripts/build.js').includes('data-critical-home') || !read('scripts/build.js').includes('rel="preload" href="assets/platform.css') || !read('scripts/build.js').includes('hreflang="x-default"')) fail('Critical rendering path or SEO build metadata is incomplete');
 if (!read('vercel.json').includes('max-age=31536000, immutable') || !read('vercel.json').includes('max-age=0, must-revalidate')) fail('Production browser cache headers are incomplete');
 if (!read('scripts/build.js').includes("'@type':'WebPage'") || !read('scripts/build.js').includes("'@type':'EducationalOrganization'")) fail('Structured search data is incomplete');
@@ -326,7 +327,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '68.4.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.4.0'") || !read('service-worker.js').includes('mf-science-v6840-performance')) fail('V68.4 version and cache identifiers are not unified');
+if (packageInfo.version !== '68.4.2' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.4.2'") || !read('service-worker.js').includes('mf-science-v6842-ui-performance')) fail('V68.4.2 version and cache identifiers are not unified');
 const staffAdminSource=read('assets/admin.js'),staffFunctionsSource=read('functions/index.js'),staffSyncSource=read('assets/firebase-sync.js'),courseOnlineSource=read('assets/online.js');
 if(!staffAdminSource.includes('renderStaffManagement')||!staffFunctionsSource.includes('exports.upsertStaffAccount')||!staffFunctionsSource.includes('exports.setStaffAccountState')||!staffSyncSource.includes('listStaffAccounts'))fail('Staff account management is incomplete');
 if(!read('firestore.rules').includes("assistantCan('payments')")||!read('firestore.rules').includes("assistantCan('content')"))fail('Assistant section permissions are not enforced in Firestore rules');

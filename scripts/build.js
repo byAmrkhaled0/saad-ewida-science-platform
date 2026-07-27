@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '68.4.0';
+const release = '68.4.2';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -88,7 +88,7 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
         .replace(/\sdecoding="async"/g, value => seenDecoding ? '' : (seenDecoding=true,value))
         .replace(/\sfetchpriority="high"/g, value => seenPriority ? '' : (seenPriority=true,value));
     });
-    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher-480.webp" media="(max-width: 900px)" fetchpriority="high">\n<link rel="preload" as="image" href="assets/teacher.webp" media="(min-width: 901px)" fetchpriority="high">\n</head>`);
+    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher.webp" imagesrcset="assets/teacher-480.webp 480w, assets/teacher-768.webp 768w, assets/teacher.webp 1000w" imagesizes="(max-width: 900px) 390px, 430px" fetchpriority="high">\n</head>`);
   }
   if (file === 'index.html') {
     const schema = { '@context':'https://schema.org', '@graph':[
