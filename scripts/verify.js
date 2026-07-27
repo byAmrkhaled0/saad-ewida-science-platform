@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const requiredFiles = [
   'index.html', 'student.html', 'parent.html', 'exams.html', 'teacher-login.html',
-  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/teacher-768.webp', 'assets/critical-home.css',
+  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/teacher-768.webp', 'assets/firebase-lazy.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
@@ -275,7 +275,7 @@ if (appSourceCode.includes('/functions\\\\/not-found|function.*unavailable/') ||
 if (!read('index.html').includes('<script defer src="https://www.gstatic.com/firebasejs/')) fail('Firebase scripts are not downloaded in parallel with deferred execution');
 if (!read('index.html').includes('<b>9</b><small>صفوف دراسية</small>') || !read('index.html').includes('teacher-480.webp 480w') || !read('index.html').includes('teacher-768.webp 768w')) fail('Home grade count or responsive LCP image is incomplete');
 if (/class="floating-card/.test(read('index.html')) || /متابعة مستمرة<\/div>/.test(read('index.html'))) fail('Decorative teacher-image cards can overlap the portrait');
-if (!read('scripts/build.js').includes('data-critical-home') || !read('scripts/build.js').includes('rel="preload" href="assets/platform.css') || !read('scripts/build.js').includes('hreflang="x-default"')) fail('Critical rendering path or SEO build metadata is incomplete');
+if (!read('scripts/build.js').includes('assets/firebase-lazy.js') || !read('scripts/build.js').includes("file === 'index.html'") || !read('scripts/build.js').includes('hreflang="x-default"')) fail('Landing-page performance or SEO build metadata is incomplete');
 if (!read('vercel.json').includes('max-age=31536000, immutable') || !read('vercel.json').includes('max-age=0, must-revalidate')) fail('Production browser cache headers are incomplete');
 if (!read('scripts/build.js').includes("'@type':'WebPage'") || !read('scripts/build.js').includes("'@type':'EducationalOrganization'")) fail('Structured search data is incomplete');
 const upgrade = read('assets/v53-upgrades.js');
@@ -327,7 +327,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '68.4.2' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.4.2'") || !read('service-worker.js').includes('mf-science-v6842-ui-performance')) fail('V68.4.2 version and cache identifiers are not unified');
+if (packageInfo.version !== '68.5.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.0'") || !read('service-worker.js').includes('mf-science-v6850-performance')) fail('V68.5.0 version and cache identifiers are not unified');
 const staffAdminSource=read('assets/admin.js'),staffFunctionsSource=read('functions/index.js'),staffSyncSource=read('assets/firebase-sync.js'),courseOnlineSource=read('assets/online.js');
 if(!staffAdminSource.includes('renderStaffManagement')||!staffFunctionsSource.includes('exports.upsertStaffAccount')||!staffFunctionsSource.includes('exports.setStaffAccountState')||!staffSyncSource.includes('listStaffAccounts'))fail('Staff account management is incomplete');
 if(!read('firestore.rules').includes("assistantCan('payments')")||!read('firestore.rules').includes("assistantCan('content')"))fail('Assistant section permissions are not enforced in Firestore rules');

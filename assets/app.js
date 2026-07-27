@@ -12,7 +12,7 @@ var LAST_EXAM_CODE_KEY = 'mf_last_exam_code';
 var EXAM_DRAFT_PREFIX = 'mf_exam_draft_v2_';
 var PENDING_BOOKING_REQUEST_KEY = 'mf_pending_booking_request_v1';
 var cloudSaveTimer = null;
-var MF_ASSET_VERSION = '68.4.2';
+var MF_ASSET_VERSION = '68.5.0';
 var mfLazyScriptPromises = Object.create(null);
 
 function loadLazyScript(key, source, readyCheck){
@@ -165,6 +165,7 @@ async function initFirebaseData(){
     if(cloudData){ appData = mergeData(cloudData); saveData(appData); refreshActiveViews(); }
   }catch(e){ appDataLoadFailed=true; refreshActiveViews(); }
 }
+window.addEventListener('mfcloudready',()=>initFirebaseData());
 function refreshActiveViews(){
   const path=(location.pathname.split('/').pop()||'index.html');
   try{
@@ -743,6 +744,7 @@ function setupBooking(){
       const receipt=receiptInput?.files?.[0];
       if(b.paymentMethod!=='center'&&!receipt)return toast('ارفع صورة إيصال التحويل أولًا');
       if(receipt&&receipt.size>4*1024*1024)return toast('حجم الإيصال أكبر من 4MB');
+      if(!window.MFCloud?.ready && window.MFLoadFirebase){try{await window.MFLoadFirebase();}catch(_){}}
       if(!window.MFCloud?.ready || !window.MFCloud?.createBooking) return toast('خدمة الحجز غير متاحة حاليًا. حاول لاحقًا.');
       button?.classList.add('is-loading'); if(button)button.disabled=true;
       try{

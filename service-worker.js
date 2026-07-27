@@ -1,8 +1,8 @@
-const CACHE_NAME = "mf-science-v6842-ui-performance";
+const CACHE_NAME = "mf-science-v6850-performance";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
-  "/terms.html", "/offline.html", "/assets/platform.css", "/assets/platform.js",
+  "/terms.html", "/offline.html", "/assets/platform.css", "/assets/platform.js", "/assets/firebase-lazy.js",
   "/assets/online.js", "/assets/firebase-sync.js", "/assets/firebase-config.js",
   "/teacher-login.html", "/teacher.webmanifest",
   "/assets/logo-icon.svg", "/assets/icon-192.png",

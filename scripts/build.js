@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '68.4.2';
+const release = '68.5.0';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -114,8 +114,6 @@ const joinAssets = (items, output) => fs.writeFileSync(
 joinAssets(cssParts, 'platform.css');
 joinAssets(publicJsParts, 'platform.js');
 joinAssets(adminJsParts, 'admin-platform.js');
-const criticalHomeCss = fs.readFileSync(path.join(root, 'assets', 'critical-home.css'), 'utf8');
-
 // Files superseded by the production bundles or not referenced by any page are
 // excluded from the deploy artifact to reduce transfer and cache storage.
 const legacyAdminAssets = ['v55-admin.js','v59-admin.js','v60-admin.js','v61-admin.js'];
@@ -130,12 +128,6 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   // Accept both relative and root-relative asset paths. offline.html uses
   // /assets/... because it is served as the PWA navigation fallback.
   html = html.replace(/(?:<link[^>]+href=["']\/?assets\/(?:site|v55|v56|v57|v59|v60|v61|v64-mobile)\.css[^>]*>\s*)+/gi, `<link rel="stylesheet" href="assets/platform.css?v=${release}">\n`);
-  if (file === 'index.html') {
-    html = html.replace(
-      `<link rel="stylesheet" href="assets/platform.css?v=${release}">`,
-      `<style data-critical-home>${criticalHomeCss}</style>\n<link rel="preload" href="assets/platform.css?v=${release}" as="style" onload="this.onload=null;this.rel='stylesheet'">\n<noscript><link rel="stylesheet" href="assets/platform.css?v=${release}"></noscript>`
-    );
-  }
   html = html.replace(/(?:<script defer src=["']\/?assets\/(?:app|v53-upgrades|v56-fixes)\.js[^>]*><\/script>\s*)+/gi, `<script defer src="assets/platform.js?v=${release}"></script>\n`);
   if (file === 'teacher-login.html') {
     html = html.replace(/<script defer src=["']assets\/(?:platform|app|admin|v53-upgrades|v55-admin|v56-fixes|v59-admin|v60-admin)\.js[^>]*><\/script>\s*/gi, '');
@@ -146,6 +138,13 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   let publicSeen = false, adminSeen = false;
   html = html.replace(new RegExp(publicBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => publicSeen ? '' : (publicSeen = true, match));
   html = html.replace(new RegExp(adminBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => adminSeen ? '' : (adminSeen = true, match));
+  if (file === 'index.html') {
+    // The public landing page does not need Firebase to produce its first
+    // paint. Load it after the page is visible or immediately on interaction.
+    html = html.replace(/<script defer src=["']https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.5\/firebase-(?:app|auth|firestore|storage|functions)-compat\.js["']><\/script>\s*/gi, '');
+    html = html.replace(/<script defer src=["']assets\/firebase-(?:config|sync)\.js[^>]*><\/script>\s*/gi, '');
+    html = html.replace('</body>', `<script defer src="assets/firebase-lazy.js?v=${release}" data-version="${release}"></script>\n</body>`);
+  }
   fs.writeFileSync(filePath, html);
 }
 
