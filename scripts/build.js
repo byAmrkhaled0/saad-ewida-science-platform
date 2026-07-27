@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '68.3.0';
+const release = '68.4.0';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -76,7 +76,7 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   html = html.replace(/<title>[^<]*<\/title>/i, `<title>${title}</title>`);
   html = html.replace(/<meta[^>]+name=["']description["'][^>]*>\s*/ig, '').replace(/<meta[^>]+content=["'][^"']*["'][^>]+name=["']description["'][^>]*>\s*/ig, '').replace(/<meta[^>]+name=["']robots["'][^>]*>\s*/ig, '');
   const robots = privatePages.has(file) ? 'noindex, nofollow, noarchive' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
-  const meta = `<meta name="description" content="${escapeAttr(description)}">\n<meta name="robots" content="${robots}">\n<link rel="canonical" href="${canonical}">\n<link rel="alternate" hreflang="ar-EG" href="${canonical}">\n<meta property="og:locale" content="ar_EG">\n<meta property="og:type" content="website">\n<meta property="og:site_name" content="منصة المستر سعد عويضة">\n<meta property="og:title" content="${escapeAttr(title)}">\n<meta property="og:description" content="${escapeAttr(description)}">\n<meta property="og:url" content="${canonical}">\n<meta property="og:image" content="${imageUrl}">\n<meta name="twitter:card" content="summary_large_image">\n<meta name="twitter:title" content="${escapeAttr(title)}">\n<meta name="twitter:description" content="${escapeAttr(description)}">\n<meta name="twitter:image" content="${imageUrl}">`;
+  const meta = `<meta name="description" content="${escapeAttr(description)}">\n<meta name="robots" content="${robots}">\n<link rel="canonical" href="${canonical}">\n<link rel="alternate" hreflang="ar-EG" href="${canonical}">\n<link rel="alternate" hreflang="x-default" href="${canonical}">\n<meta property="og:locale" content="ar_EG">\n<meta property="og:type" content="website">\n<meta property="og:site_name" content="منصة المستر سعد عويضة">\n<meta property="og:title" content="${escapeAttr(title)}">\n<meta property="og:description" content="${escapeAttr(description)}">\n<meta property="og:url" content="${canonical}">\n<meta property="og:image" content="${imageUrl}">\n<meta property="og:image:width" content="512">\n<meta property="og:image:height" content="512">\n<meta property="og:image:alt" content="منصة المستر سعد عويضة للأحياء والعلوم">\n<meta name="twitter:card" content="summary_large_image">\n<meta name="twitter:title" content="${escapeAttr(title)}">\n<meta name="twitter:description" content="${escapeAttr(description)}">\n<meta name="twitter:image" content="${imageUrl}">`;
   html = html.replace('</title>', `</title>\n${meta}`);
   html = html.replace(/\?v=\d+(?:\.\d+)*/g, `?v=${release}`);
   html = html.replace(/<img(?![^>]*\bloading=)([^>]*?)>/gi, '<img loading="lazy" decoding="async"$1>');
@@ -88,11 +88,12 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
         .replace(/\sdecoding="async"/g, value => seenDecoding ? '' : (seenDecoding=true,value))
         .replace(/\sfetchpriority="high"/g, value => seenPriority ? '' : (seenPriority=true,value));
     });
-    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher.webp" fetchpriority="high">\n</head>`);
+    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher-480.webp" media="(max-width: 900px)" fetchpriority="high">\n<link rel="preload" as="image" href="assets/teacher.webp" media="(min-width: 901px)" fetchpriority="high">\n</head>`);
   }
   if (file === 'index.html') {
     const schema = { '@context':'https://schema.org', '@graph':[
       { '@type':'WebSite', '@id':`${siteUrl}/#website`, url:`${siteUrl}/`, name:'منصة المستر سعد عويضة', inLanguage:'ar-EG' },
+      { '@type':'WebPage', '@id':`${siteUrl}/#webpage`, url:`${siteUrl}/`, name:'مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', isPartOf:{'@id':`${siteUrl}/#website`}, about:{'@id':`${siteUrl}/#teacher`}, primaryImageOfPage:{'@type':'ImageObject',url:`${siteUrl}/assets/teacher.webp`}, inLanguage:'ar-EG' },
       { '@type':'Person', '@id':`${siteUrl}/#teacher`, name:'سعد عويضة', jobTitle:'مدرس الأحياء والعلوم والعلوم المتكاملة', description:'مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل', telephone:'+201097163200', url:`${siteUrl}/`, image:`${siteUrl}/assets/teacher.webp`, knowsAbout:['الأحياء','العلوم','العلوم المتكاملة'], areaServed:[{'@type':'City',name:'المنصورة'},{'@type':'Country',name:'مصر'}], sameAs:['https://www.facebook.com/saad.abomoaz'] },
       { '@type':'EducationalOrganization', '@id':`${siteUrl}/#organization`, name:'منصة المستر سعد عويضة', alternateName:'منصة سعد عويضة للأحياء والعلوم', description:'منصة تعليمية لشرح الأحياء والعلوم والعلوم المتكاملة في المنصورة وأونلاين', url:`${siteUrl}/`, logo:imageUrl, telephone:'+201097163200', founder:{'@id':`${siteUrl}/#teacher`}, slogan:'نسعى للإبداع والتفوق', areaServed:[{'@type':'City',name:'المنصورة'},{'@type':'AdministrativeArea',name:'الدقهلية'},{'@type':'Country',name:'مصر'}], sameAs:['https://www.facebook.com/saad.abomoaz'] }
     ]};
@@ -113,6 +114,7 @@ const joinAssets = (items, output) => fs.writeFileSync(
 joinAssets(cssParts, 'platform.css');
 joinAssets(publicJsParts, 'platform.js');
 joinAssets(adminJsParts, 'admin-platform.js');
+const criticalHomeCss = fs.readFileSync(path.join(root, 'assets', 'critical-home.css'), 'utf8');
 
 // Files superseded by the production bundles or not referenced by any page are
 // excluded from the deploy artifact to reduce transfer and cache storage.
@@ -128,6 +130,12 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   // Accept both relative and root-relative asset paths. offline.html uses
   // /assets/... because it is served as the PWA navigation fallback.
   html = html.replace(/(?:<link[^>]+href=["']\/?assets\/(?:site|v55|v56|v57|v59|v60|v61|v64-mobile)\.css[^>]*>\s*)+/gi, `<link rel="stylesheet" href="assets/platform.css?v=${release}">\n`);
+  if (file === 'index.html') {
+    html = html.replace(
+      `<link rel="stylesheet" href="assets/platform.css?v=${release}">`,
+      `<style data-critical-home>${criticalHomeCss}</style>\n<link rel="preload" href="assets/platform.css?v=${release}" as="style" onload="this.onload=null;this.rel='stylesheet'">\n<noscript><link rel="stylesheet" href="assets/platform.css?v=${release}"></noscript>`
+    );
+  }
   html = html.replace(/(?:<script defer src=["']\/?assets\/(?:app|v53-upgrades|v56-fixes)\.js[^>]*><\/script>\s*)+/gi, `<script defer src="assets/platform.js?v=${release}"></script>\n`);
   if (file === 'teacher-login.html') {
     html = html.replace(/<script defer src=["']assets\/(?:platform|app|admin|v53-upgrades|v55-admin|v56-fixes|v59-admin|v60-admin)\.js[^>]*><\/script>\s*/gi, '');

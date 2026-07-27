@@ -1,13 +1,12 @@
-const CACHE_NAME = "mf-science-v6830-production";
+const CACHE_NAME = "mf-science-v6840-performance";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
   "/terms.html", "/offline.html", "/assets/platform.css", "/assets/platform.js",
   "/assets/online.js", "/assets/firebase-sync.js", "/assets/firebase-config.js",
-  "/teacher-login.html", "/teacher.webmanifest", "/assets/admin-platform.js",
+  "/teacher-login.html", "/teacher.webmanifest",
   "/assets/logo-icon.svg", "/assets/icon-192.png",
-  "/assets/icon-512.png", "/assets/icon-maskable-512.png",
-  "/assets/teacher.webp", "/assets/saad-promo.webp", "/site.webmanifest"
+  "/assets/icon-512.png", "/assets/icon-maskable-512.png", "/site.webmanifest"
 ];
 
 // This same-origin bundle is built from firebase/app and firebase/messaging/sw,
