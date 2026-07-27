@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var release=(document.currentScript&&document.currentScript.dataset.version)||'68.5.0';
+  var release=(document.currentScript&&document.currentScript.dataset.version)||'68.5.2';
   var promise=null;
   function load(src){
     return new Promise(function(resolve,reject){
@@ -34,8 +34,15 @@
   ['pointerdown','focusin','keydown','touchstart'].forEach(function(type){
     window.addEventListener(type,start,{once:true,passive:true,capture:true});
   });
-  window.addEventListener('load',function(){
-    if('requestIdleCallback' in window)requestIdleCallback(start,{timeout:3500});
-    else setTimeout(start,1800);
-  },{once:true});
+  function observeDataSections(){
+    if(!('IntersectionObserver' in window))return;
+    var targets=['booking','publicLeaderboard','reviewsList'].map(function(id){return document.getElementById(id);}).filter(Boolean);
+    if(!targets.length)return;
+    var observer=new IntersectionObserver(function(entries){
+      if(entries.some(function(entry){return entry.isIntersecting;})){observer.disconnect();start();}
+    },{rootMargin:'240px 0px'});
+    targets.forEach(function(target){observer.observe(target);});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observeDataSections,{once:true});
+  else observeDataSections();
 })();

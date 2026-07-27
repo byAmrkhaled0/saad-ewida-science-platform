@@ -262,7 +262,7 @@ if (manifest.display !== 'standalone' || manifest.scope !== '/' || !Array.isArra
 if (!manifest.icons.some(icon => String(icon.purpose || '').includes('maskable') && icon.sizes === '512x512')) fail('Maskable PWA icon is missing');
 const sw = read('service-worker.js');
 const appShellSource = sw.slice(0,sw.indexOf('];')+2);
-if (!/mf-science-v\d+-(?:production|performance|ui-performance)/.test(sw) || !sw.includes('/assets/platform.js') || !sw.includes('/assets/icon-maskable-512.png')) fail('Service worker app shell is incomplete');
+if (!/mf-science-v\d+-[a-z0-9-]*performance/.test(sw) || !sw.includes('/assets/platform.js') || !sw.includes('/assets/icon-maskable-512.png')) fail('Service worker app shell is incomplete');
 if (/assets\/vendor/.test(appShellSource) || !/teacher-login\.html/.test(appShellSource) || !/teacher\.webmanifest/.test(appShellSource) || /assets\/admin-platform\.js/.test(appShellSource) || !sw.includes('event.waitUntil(network.catch')) fail('Teacher PWA shell or repeat-visit caching is incomplete');
 const teacherManifest=JSON.parse(read('teacher.webmanifest'));
 if (teacherManifest.id !== '/teacher-login.html' || teacherManifest.start_url !== '/teacher-login.html' || teacherManifest.scope !== '/') fail('Teacher PWA launch route is invalid');
@@ -273,7 +273,7 @@ if (!appSourceCode.includes('item.notes].filter(Boolean)') || !adminSourceCode.i
 if (read('teacher-login.html').includes('jspdf.umd.min.js') || read('parent.html').includes('jspdf.umd.min.js') || !appSourceCode.includes("loadLazyScript('jspdf'")) fail('PDF library is not lazy-loaded');
 if (appSourceCode.includes('/functions\\\\/not-found|function.*unavailable/') || !appSourceCode.includes("if(/not-found/i.test(raw))return 'الكود غير صحيح أو غير موجود.'")) fail('Firebase not-found errors are mislabeled as an unavailable service');
 if (!read('index.html').includes('<script defer src="https://www.gstatic.com/firebasejs/')) fail('Firebase scripts are not downloaded in parallel with deferred execution');
-if (!read('index.html').includes('<b>9</b><small>صفوف دراسية</small>') || !read('index.html').includes('teacher-480.webp 480w') || !read('index.html').includes('teacher-768.webp 768w')) fail('Home grade count or responsive LCP image is incomplete');
+if (!read('index.html').includes('<b>9</b><small>صفوف دراسية</small>') || !read('index.html').includes('<source media="(max-width: 900px)" srcset="assets/teacher-480.webp">')) fail('Home grade count or responsive LCP image is incomplete');
 if (/class="floating-card/.test(read('index.html')) || /متابعة مستمرة<\/div>/.test(read('index.html'))) fail('Decorative teacher-image cards can overlap the portrait');
 if (!read('scripts/build.js').includes('assets/firebase-lazy.js') || !read('scripts/build.js').includes("file === 'index.html'") || !read('scripts/build.js').includes('hreflang="x-default"')) fail('Landing-page performance or SEO build metadata is incomplete');
 if (!read('vercel.json').includes('max-age=31536000, immutable') || !read('vercel.json').includes('max-age=0, must-revalidate')) fail('Production browser cache headers are incomplete');
@@ -327,7 +327,12 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '68.5.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.0'") || !read('service-worker.js').includes('mf-science-v6850-performance')) fail('V68.5.0 version and cache identifiers are not unified');
+if (packageInfo.version !== '68.5.2' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.2'") || !read('service-worker.js').includes('mf-science-v6852-audit-performance')) fail('V68.5.2 version and cache identifiers are not unified');
+if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
+if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
+if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');
+if (/target="_blank"(?![^>]*rel="[^"]*noopener)/.test(read('assets/admin.js'))) fail('Admin links opened in a new tab must use noopener');
+if (!read('scripts/build.js').includes("'questions.html'") || !read('scripts/build.js').includes("file === 'questions.html' ? `${siteUrl}/materials.html`")) fail('Legacy questions page SEO redirect is incomplete');
 const staffAdminSource=read('assets/admin.js'),staffFunctionsSource=read('functions/index.js'),staffSyncSource=read('assets/firebase-sync.js'),courseOnlineSource=read('assets/online.js');
 if(!staffAdminSource.includes('renderStaffManagement')||!staffFunctionsSource.includes('exports.upsertStaffAccount')||!staffFunctionsSource.includes('exports.setStaffAccountState')||!staffSyncSource.includes('listStaffAccounts'))fail('Staff account management is incomplete');
 if(!read('firestore.rules').includes("assistantCan('payments')")||!read('firestore.rules').includes("assistantCan('content')"))fail('Assistant section permissions are not enforced in Firestore rules');

@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '68.5.0';
+const release = '68.5.2';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -59,7 +59,7 @@ const seoPages = {
   'privacy.html': ['سياسة الخصوصية | منصة المستر سعد عويضة', 'سياسة حماية بيانات الطلاب وأولياء الأمور في منصة المستر سعد عويضة التعليمية.'],
   'terms.html': ['شروط الاستخدام | منصة المستر سعد عويضة', 'شروط استخدام منصة المستر سعد عويضة التعليمية وخدمات الحجز والمحاضرات والامتحانات.']
 };
-const privatePages = new Set(['teacher-login.html', 'student.html', 'parent.html', 'offline.html']);
+const privatePages = new Set(['teacher-login.html', 'student.html', 'parent.html', 'offline.html', 'questions.html']);
 const imageUrl = `${siteUrl}/assets/icon-512.png`;
 
 function escapeAttr(value) {
@@ -72,7 +72,7 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   const fallbackTitle = (html.match(/<title>([^<]*)<\/title>/i) || [,'منصة المستر سعد عويضة'])[1];
   const existingDescription = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [,'منصة المستر سعد عويضة التعليمية.'])[1];
   const [title, description] = seoPages[file] || [fallbackTitle, existingDescription];
-  const canonical = file === 'index.html' ? `${siteUrl}/` : `${siteUrl}/${file}`;
+  const canonical = file === 'index.html' ? `${siteUrl}/` : file === 'questions.html' ? `${siteUrl}/materials.html` : `${siteUrl}/${file}`;
   html = html.replace(/<title>[^<]*<\/title>/i, `<title>${title}</title>`);
   html = html.replace(/<meta[^>]+name=["']description["'][^>]*>\s*/ig, '').replace(/<meta[^>]+content=["'][^"']*["'][^>]+name=["']description["'][^>]*>\s*/ig, '').replace(/<meta[^>]+name=["']robots["'][^>]*>\s*/ig, '');
   const robots = privatePages.has(file) ? 'noindex, nofollow, noarchive' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
@@ -88,7 +88,8 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
         .replace(/\sdecoding="async"/g, value => seenDecoding ? '' : (seenDecoding=true,value))
         .replace(/\sfetchpriority="high"/g, value => seenPriority ? '' : (seenPriority=true,value));
     });
-    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher.webp" imagesrcset="assets/teacher-480.webp 480w, assets/teacher-768.webp 768w, assets/teacher.webp 1000w" imagesizes="(max-width: 900px) 390px, 430px" fetchpriority="high">\n</head>`);
+    html = html.replace(/<link rel="preconnect" href="https:\/\/www\.gstatic\.com" crossorigin\/?>\s*/i,'');
+    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher-480.webp" media="(max-width: 900px)" fetchpriority="high">\n<link rel="preload" as="image" href="assets/teacher.webp" media="(min-width: 901px)" fetchpriority="high">\n</head>`);
   }
   if (file === 'index.html') {
     const schema = { '@context':'https://schema.org', '@graph':[
