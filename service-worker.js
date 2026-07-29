@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6852-audit-performance";
+const CACHE_NAME = "mf-science-v6854-three-part-names-performance";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",

@@ -12,7 +12,7 @@ const requiredFiles = [
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
-  'functions/index.js', 'functions/lib/monthly-incentive.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
+  'functions/index.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
 
 const failures = [];
@@ -29,7 +29,7 @@ const jsFiles = [
   'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
-  'functions/index.js', 'functions/lib/monthly-incentive.js', 'local-server.js', 'scripts/build.js',
+  'functions/index.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
 for (const relative of jsFiles) {
@@ -59,6 +59,10 @@ for (const relative of jsonFiles) {
   catch (error) { fail(`Invalid JSON: ${relative} (${error.message})`); }
 }
 if (!failures.some(x => x.startsWith('Invalid JSON'))) ok('JSON files are valid');
+const functionsLock = JSON.parse(read('functions/package-lock.json'));
+if (functionsLock.packages?.['..'] || functionsLock.packages?.['node_modules/saad-ewida-science-platform']) {
+  fail('Functions package lock still contains an unnecessary parent-project dependency');
+}
 
 const htmlFiles = fs.readdirSync(root).filter(name => name.endsWith('.html'));
 const localRefPattern = /(?:src|href)=["']([^"'#?]+)["']/g;
@@ -185,6 +189,32 @@ if (!failures.some(x => x.includes('public direct-write') || x.includes('Cloud F
 }
 
 const functionsSource = read('functions/index.js');
+if (!functionsSource.includes("require('./lib/student-name')") ||
+    !functionsSource.includes('hasAtLeastThreeNameParts') ||
+    !functionsSource.includes("db.collection('_student_name_claims')") ||
+    !functionsSource.includes("select('name', 'studentName', 'active').limit(2000)") ||
+    !functionsSource.includes('batch.create(nameIdentity.claimRef') ||
+    !functionsSource.includes('throw duplicateStudentNameError()')) {
+  fail('Atomic duplicate-student-name protection is incomplete in Cloud Functions');
+}
+if (!syncSource.includes('studentNameIdentity=async') ||
+    !syncSource.includes("db.collection('_student_name_claims')") ||
+    !read('firestore.rules').includes('match /_student_name_claims/{nameKey}')) {
+  fail('Direct staff fallback or Firestore rules can bypass duplicate-student-name protection');
+}
+if (!read('assets/app.js').includes('هذا الطالب مسجل بالفعل على المنصة') ||
+    !read('assets/admin.js').includes('هذا الطالب مسجل بالفعل على المنصة')) {
+  fail('Duplicate-student-name validation message is missing from public or admin UI');
+}
+if (!read('index.html').includes('اسم الطالب الثلاثي') ||
+    !read('assets/app.js').includes("split(/\\s+/).filter(Boolean).length<3") ||
+    !read('assets/firebase-sync.js').includes('hasAtLeastThreeNameParts')) {
+  fail('Three-part student-name validation is incomplete in public or staff registration');
+}
+if (!failures.some(x => x.includes('duplicate-student-name') || x.includes('Duplicate-student-name'))) {
+  ok('Atomic duplicate student-name validation passed for public and staff registration');
+}
+
 const callableNames = [
   'getPortalStudent', 'createStudentAccess', 'createBooking', 'approveBooking', 'rejectBooking', 'getBookingStatus', 'createReview', 'recordClassProgress', 'registerTeacherPushToken',
   'getExamDashboard', 'startExam', 'submitExam', 'prepareHomeworkUpload', 'registerHomeworkSubmission', 'reportClientError',
@@ -327,7 +357,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '68.5.2' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.2'") || !read('service-worker.js').includes('mf-science-v6852-audit-performance')) fail('V68.5.2 version and cache identifiers are not unified');
+if (packageInfo.version !== '68.5.4' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.4'") || !read('service-worker.js').includes('mf-science-v6854-three-part-names-performance') || [...functionsSource.matchAll(/'platform-release': '68-5-4'/g)].length !== 2) fail('V68.5.4 version and cache identifiers are not unified');
 if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
 if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
 if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');

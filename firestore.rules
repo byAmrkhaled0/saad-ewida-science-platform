@@ -141,6 +141,14 @@ service cloud.firestore {
     // Server-only operational collections.
     match /_rate_limits/{id} { allow read, write: if false; }
     match /_booking_requests/{id} { allow read, write: if false; }
+    match /_student_name_claims/{nameKey} {
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.nameKey == nameKey
+        && validCode(request.resource.data.studentCode);
+      allow update: if false;
+      allow delete: if isTeacher();
+    }
     match /_homework_upload_tokens/{id} { allow read, write: if false; }
     match /attendance_sessions/{id} { allow read, write: if false; }
     match /deleted_students/{id} { allow read, write: if false; }

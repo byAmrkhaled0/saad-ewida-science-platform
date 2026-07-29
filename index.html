@@ -130,7 +130,7 @@
 <form class="card grid grid-2 booking-form-compact" id="bookingForm">
 <div class="booking-steps" aria-label="خطوات الحجز"><span class="active" data-booking-indicator="1"><b>1</b><small>بيانات الطالب</small></span><i></i><span data-booking-indicator="2"><b>2</b><small>اختيار الموعد</small></span><i></i><span data-booking-indicator="3"><b>3</b><small>استلام الكود</small></span></div>
 <div class="booking-step active" data-booking-step="1">
-<div class="field"><label for="bookingStudentName">اسم الطالب</label><input id="bookingStudentName" name="name" placeholder="اكتب اسم الطالب" autocomplete="name" required=""/></div>
+<div class="field"><label for="bookingStudentName">اسم الطالب الثلاثي</label><input id="bookingStudentName" name="name" placeholder="اكتب الاسم الثلاثي على الأقل" autocomplete="name" minlength="8" required=""/></div>
 <div class="field"><label for="bookingStudentPhone">رقم الطالب</label><input id="bookingStudentPhone" name="studentPhone" type="tel" placeholder="مثال: 010xxxxxxxx" inputmode="tel" autocomplete="tel" required=""/></div>
 <div class="field"><label for="bookingParentPhone">رقم ولي الأمر</label><input id="bookingParentPhone" name="parentPhone" type="tel" placeholder="اكتب الرقم بالعربي أو الإنجليزي" inputmode="tel" autocomplete="tel" required=""/><small class="field-hint">ينفع نفس رقم الطالب، وينفع تكرار نفس رقم ولي الأمر لأكثر من ابن.</small></div>
 <button class="btn primary booking-next" type="button" data-booking-next><span data-icon="external-link"></span> التالي: أكمل الحجز</button>
