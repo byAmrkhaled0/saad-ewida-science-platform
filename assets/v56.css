@@ -248,6 +248,7 @@ body{
 #studentQrReader video,#qrScannerVideo{width:100%!important;max-height:380px;object-fit:cover;border-radius:16px}
 #studentQrReader:empty{display:none}
 .qr-scanner-box>p{text-align:center}
+.qr-source-actions{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.qr-source-actions .btn{min-width:150px}.qr-file-status{text-align:center;padding:12px;color:var(--muted)}#studentQrReader img,#parentQrReader img{max-width:100%;max-height:360px;object-fit:contain;border-radius:14px}
 
 /* V56.11: compact booking pass and instant mobile interactions. */
 .booking-clean-layout{max-width:760px!important}

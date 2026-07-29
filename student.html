@@ -53,7 +53,7 @@
 <button class="btn ghost" onclick="startStudentScanner()" type="button"><span data-icon="qr"></span> ماسح QR الموحّد</button>
 </div>
 <p>بياناتك تظهر بالكود فقط، والحضور والتسميع يتم تسجيلهم من المدرس.</p>
-<div class="qr-scanner-box" hidden="" id="qrScannerBox"><div id="studentQrReader"></div><video id="qrScannerVideo" playsinline="" hidden></video><p>امسح QR الطالب لفتح البوابة، أو QR حصة المدرس لتسجيل حضور الأونلاين.</p><button class="btn ghost small" onclick="stopStudentScanner()" type="button">إيقاف المسح</button></div>
+<div class="qr-scanner-box" hidden="" id="qrScannerBox"><div id="studentQrReader"></div><video id="qrScannerVideo" playsinline="" hidden></video><p>امسح QR الطالب لفتح البوابة، أو QR حصة المدرس لتسجيل حضور الأونلاين.</p><div class="qr-source-actions"><button class="btn ghost small" onclick="document.getElementById('studentQrImageInput')?.click()" type="button"><span data-icon="image"></span> اختيار صورة QR</button><button class="btn ghost small" onclick="stopStudentScanner()" type="button">إيقاف المسح</button></div><input id="studentQrImageInput" type="file" accept="image/*" hidden onchange="scanStudentQrImage(event)"></div>
 </form>
 </div>
 </section>

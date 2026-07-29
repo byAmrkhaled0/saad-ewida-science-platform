@@ -262,6 +262,8 @@ if (!adminSourceCode.includes("loadSiteData({fast:true})") || !adminSourceCode.i
 if (!appSourceCode.includes('staffCacheOnly') || !appSourceCode.includes('if(isStaffWorkspace())return;')) fail('Compact staff browser cache protection is missing');
 if (!fixesSourceCode.includes('showMoreAdminStudents') || !fixesSourceCode.includes('slice(0,adminStudentVisible)')) fail('Paginated student rendering is missing');
 if (!appSourceCode.includes('window.Html5Qrcode') || !appSourceCode.includes("loadQrScanner:()=>loadLazyScript('qr-scanner'")) fail('Cross-browser lazy QR scanner fallback is missing');
+if (!appSourceCode.includes('scanStudentQrImage') || !appSourceCode.includes('scanParentQrImage') || !appSourceCode.includes('.scanFile(file,true)')) fail('QR image gallery scanning is incomplete');
+if (!read('student.html').includes('studentQrImageInput') || !read('parent.html').includes('parentQrImageInput')) fail('QR image picker controls are missing');
 for (const page of ['student.html','parent.html','teacher-login.html']) {
   if (read(page).includes('assets/vendor/html5-qrcode-2.3.8.min.js')) fail(`QR scanner is still eagerly loaded by ${page}`);
 }
@@ -292,7 +294,7 @@ if (manifest.display !== 'standalone' || manifest.scope !== '/' || !Array.isArra
 if (!manifest.icons.some(icon => String(icon.purpose || '').includes('maskable') && icon.sizes === '512x512')) fail('Maskable PWA icon is missing');
 const sw = read('service-worker.js');
 const appShellSource = sw.slice(0,sw.indexOf('];')+2);
-if (!/mf-science-v\d+-[a-z0-9-]*performance/.test(sw) || !sw.includes('/assets/platform.js') || !sw.includes('/assets/icon-maskable-512.png')) fail('Service worker app shell is incomplete');
+if (!/mf-science-v\d+-[a-z0-9-]+/.test(sw) || !sw.includes('/assets/platform.js') || !sw.includes('/assets/icon-maskable-512.png')) fail('Service worker app shell is incomplete');
 if (/assets\/vendor/.test(appShellSource) || !/teacher-login\.html/.test(appShellSource) || !/teacher\.webmanifest/.test(appShellSource) || /assets\/admin-platform\.js/.test(appShellSource) || !sw.includes('event.waitUntil(network.catch')) fail('Teacher PWA shell or repeat-visit caching is incomplete');
 const teacherManifest=JSON.parse(read('teacher.webmanifest'));
 if (teacherManifest.id !== '/teacher-login.html' || teacherManifest.start_url !== '/teacher-login.html' || teacherManifest.scope !== '/') fail('Teacher PWA launch route is invalid');
@@ -357,7 +359,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '68.5.4' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.4'") || !read('service-worker.js').includes('mf-science-v6854-three-part-names-performance') || [...functionsSource.matchAll(/'platform-release': '68-5-4'/g)].length !== 2) fail('V68.5.4 version and cache identifiers are not unified');
+if (packageInfo.version !== '68.5.5' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.5'") || !read('service-worker.js').includes('mf-science-v6855-qr-gallery') || [...functionsSource.matchAll(/'platform-release': '68-5-5'/g)].length !== 2) fail('V68.5.5 version and cache identifiers are not unified');
 if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
 if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
 if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');

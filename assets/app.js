@@ -12,7 +12,7 @@ var LAST_EXAM_CODE_KEY = 'mf_last_exam_code';
 var EXAM_DRAFT_PREFIX = 'mf_exam_draft_v2_';
 var PENDING_BOOKING_REQUEST_KEY = 'mf_pending_booking_request_v1';
 var cloudSaveTimer = null;
-var MF_ASSET_VERSION = '68.5.4';
+var MF_ASSET_VERSION = '68.5.5';
 var mfLazyScriptPromises = Object.create(null);
 
 function loadLazyScript(key, source, readyCheck){
@@ -494,6 +494,14 @@ function applyStudentModeVisibility(root,student){
 var parentQrScanner = null;
 var lastParentStudent = null;
 
+async function parentQrDecoded(rawValue){
+  const payload=parseUnifiedStudentQr(rawValue);
+  if(!payload)throw new Error('unknown-qr');
+  if(payload.type!=='student')throw new Error('attendance-qr');
+  await closeParentQrScanner();
+  await showParentReportByCode(payload.code);
+}
+
 function studentReportRows(st){
   const attendance = getAttendanceRows(st);
   const grades = [...(st.grades||[]),...(st.examAttempts||[])];
@@ -694,7 +702,10 @@ window.openParentQrScanner = async function(){
   if(!modal || !reader) return;
   modal.hidden=false; reader.innerHTML='<p class="section-desc">جاري تجهيز الكاميرا…</p>';
   try{
-    const onDecoded = async decoded => { await closeParentQrScanner(); await showParentReportByCode(String(decoded||'').trim()); };
+    const onDecoded = async decoded => {
+      try{await parentQrDecoded(decoded);}
+      catch(error){toast(error?.message==='attendance-qr'?'هذا QR حضور. اختر QR الطالب لفتح تقرير ولي الأمر.':'صورة QR غير معروفة أو غير واضحة.');}
+    };
     if(!window.Html5Qrcode)await window.MFAssets?.loadQrScanner?.();
     reader.innerHTML='';
     if(window.Html5Qrcode){
@@ -714,6 +725,22 @@ window.openParentQrScanner = async function(){
   }catch(e){
     reader.innerHTML='<p class="section-desc">تعذر فتح الكاميرا. افتح الموقع من HTTPS واسمح باستخدام الكاميرا.</p>';
   }
+};
+
+window.scanParentQrImage=async function(event){
+  const input=event?.target,file=input?.files?.[0],modal=document.getElementById('parentQrModal'),reader=document.getElementById('parentQrReader');
+  if(!file||!modal||!reader)return;
+  try{
+    await window.closeParentQrScanner();modal.hidden=false;
+    if(!window.Html5Qrcode)await window.MFAssets?.loadQrScanner?.();
+    if(!window.Html5Qrcode)throw new Error('scanner-unavailable');
+    reader.innerHTML='';parentQrScanner=new Html5Qrcode('parentQrReader');
+    const decoded=await parentQrScanner.scanFile(file,true);
+    await parentQrDecoded(decoded);
+  }catch(error){
+    reader.innerHTML='<p class="qr-file-status">تعذر قراءة QR من الصورة. استخدم صورة واضحة يظهر فيها الباركود كاملًا.</p>';
+    toast(error?.message==='attendance-qr'?'هذه صورة QR حضور وليست QR طالب':'لم يتم العثور على QR صالح داخل الصورة');
+  }finally{if(input)input.value='';}
 };
 
 window.closeParentQrScanner = async function(){
@@ -1008,13 +1035,30 @@ function setupHomeNotice(){
 }
 function setupAdminLink(){document.querySelectorAll('a[href="teacher-login.html"]').forEach(a=>a.remove());}
 function parseUnifiedStudentQr(rawValue){const raw=toEnglishDigits(String(rawValue||'')).trim();if(!raw)return null;let attendanceToken='',studentCode='';try{const url=new URL(raw,location.href);attendanceToken=String(url.searchParams.get('attendance')||'').trim();studentCode=toEnglishDigits(url.searchParams.get('code')||'').trim().toUpperCase();}catch(error){}if(!attendanceToken){const match=raw.match(/^(?:ATTENDANCE|حضور)[:\s-]+([a-f0-9]{48})$/i);if(match)attendanceToken=match[1];}if(attendanceToken&&/^[a-f0-9]{48}$/i.test(attendanceToken))return {type:'attendance',token:attendanceToken.toLowerCase()};if(!studentCode){const match=raw.match(/^(?:STUDENT|طالب)[:\s-]+([A-Z0-9_-]{6,40})$/i);studentCode=match?match[1]:raw.toUpperCase().replace(/\s+/g,'');}if(/^[A-Z0-9_-]{6,40}$/.test(studentCode))return {type:'student',code:studentCode};return null;}
-var studentQrScanner=null,studentQrStream=null,studentQrDecoded=false;
+var studentQrScanner=null,studentQrStream=null,studentQrScanBusy=false;
+async function handleStudentQrDecoded(value){
+  if(studentQrScanBusy)return;
+  studentQrScanBusy=true;
+  const payload=parseUnifiedStudentQr(value),input=document.getElementById('studentQuery'),form=document.getElementById('studentSearchForm');
+  if(!payload){await window.stopStudentScanner();studentQrScanBusy=false;toast('هذا الـ QR غير معروف. امسح QR الطالب أو QR حصة المدرس.');return;}
+  if(payload.type==='attendance'){
+    pendingStudentAttendanceToken=payload.token;
+    const saved=toEnglishDigits(input?.value||safeStorageGet(LAST_STUDENT_CODE_KEY)).trim().toUpperCase();
+    if(input&&saved)input.value=saved;
+    await window.stopStudentScanner();studentQrScanBusy=false;
+    showStudentAttendanceBanner(saved?'تم قراءة QR الحصة، جاري تسجيل حضورك…':'تم قراءة QR الحصة. اكتب كودك أو امسح QR الطالب.');
+    if(saved)form?.requestSubmit();else input?.focus();
+    return;
+  }
+  if(input)input.value=payload.code;
+  await window.stopStudentScanner();studentQrScanBusy=false;form?.requestSubmit();
+}
 window.startStudentScanner=async function(){
   const box=document.getElementById('qrScannerBox'),reader=document.getElementById('studentQrReader'),video=document.getElementById('qrScannerVideo');
   if(!box||!reader||!video)return;
   if(!window.isSecureContext&&!/^(localhost|127\.0\.0\.1)$/.test(location.hostname))return toast('الكاميرا تحتاج فتح الموقع من رابط HTTPS الآمن');
-  await window.stopStudentScanner();studentQrDecoded=false;box.hidden=false;reader.innerHTML='<p class="section-desc">جاري تجهيز الكاميرا…</p>';
-  const decoded=async value=>{if(studentQrDecoded)return;studentQrDecoded=true;const payload=parseUnifiedStudentQr(value),input=document.getElementById('studentQuery'),form=document.getElementById('studentSearchForm');if(!payload){await window.stopStudentScanner();toast('هذا الـ QR غير معروف. امسح QR الطالب أو QR حصة المدرس.');return;}if(payload.type==='attendance'){pendingStudentAttendanceToken=payload.token;const saved=toEnglishDigits(input?.value||safeStorageGet(LAST_STUDENT_CODE_KEY)).trim().toUpperCase();if(input&&saved)input.value=saved;await window.stopStudentScanner();showStudentAttendanceBanner(saved?'تم قراءة QR الحصة، جاري تسجيل حضورك…':'تم قراءة QR الحصة. اكتب كودك أو امسح QR الطالب.');if(saved)form?.requestSubmit();else input?.focus();return;}if(input)input.value=payload.code;await window.stopStudentScanner();form?.requestSubmit();};
+  await window.stopStudentScanner();studentQrScanBusy=false;box.hidden=false;reader.innerHTML='<p class="section-desc">جاري تجهيز الكاميرا…</p>';
+  const decoded=value=>handleStudentQrDecoded(value);
   try{
     if(!window.Html5Qrcode)await window.MFAssets?.loadQrScanner?.();
     reader.innerHTML='';
@@ -1032,6 +1076,22 @@ window.startStudentScanner=async function(){
   }catch(error){
     await window.stopStudentScanner();box.hidden=false;reader.hidden=false;reader.innerHTML='<p class="section-desc">تعذر تشغيل ماسح QR. اسمح للمتصفح باستخدام الكاميرا أو اكتب الكود يدويًا.</p>';toast('تعذر فتح الكاميرا أو قراءة QR');
   }
+};
+window.scanStudentQrImage=async function(event){
+  const input=event?.target,file=input?.files?.[0],box=document.getElementById('qrScannerBox'),reader=document.getElementById('studentQrReader');
+  if(!file||!box||!reader)return;
+  try{
+    await window.stopStudentScanner();studentQrScanBusy=false;box.hidden=false;reader.hidden=false;
+    if(!window.Html5Qrcode)await window.MFAssets?.loadQrScanner?.();
+    if(!window.Html5Qrcode)throw new Error('scanner-unavailable');
+    reader.innerHTML='';studentQrScanner=new Html5Qrcode('studentQrReader');
+    const decoded=await studentQrScanner.scanFile(file,true);
+    await handleStudentQrDecoded(decoded);
+  }catch(error){
+    studentQrScanBusy=false;box.hidden=false;reader.hidden=false;
+    reader.innerHTML='<p class="qr-file-status">تعذر قراءة QR من الصورة. اختَر صورة واضحة يظهر فيها الباركود كاملًا.</p>';
+    toast('لم يتم العثور على QR صالح داخل الصورة');
+  }finally{if(input)input.value='';}
 };
 window.stopStudentScanner=async function(){
   const box=document.getElementById('qrScannerBox'),video=document.getElementById('qrScannerVideo'),reader=document.getElementById('studentQrReader');
@@ -1097,7 +1157,7 @@ function registerServiceWorker(){
       registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed'&&navigator.serviceWorker.controller)worker.postMessage({type:'SKIP_WAITING'});});});
     }catch(_){ }
   });
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{try{if(sessionStorage.getItem('mf_sw_reloaded_v6854'))return;sessionStorage.setItem('mf_sw_reloaded_v6854','1');location.reload();}catch(_){ }});
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{try{if(sessionStorage.getItem('mf_sw_reloaded_v6855'))return;sessionStorage.setItem('mf_sw_reloaded_v6855','1');location.reload();}catch(_){ }});
 }
 function setupPWAInstall(){
   const button=document.getElementById('installAppButton');if(!button)return;let installPrompt=null;

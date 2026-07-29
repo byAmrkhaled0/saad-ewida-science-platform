@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var release=(document.currentScript&&document.currentScript.dataset.version)||'68.5.4';
+  var release=(document.currentScript&&document.currentScript.dataset.version)||'68.5.5';
   var promise=null;
   function load(src){
     return new Promise(function(resolve,reject){

@@ -17,7 +17,7 @@ const Timestamp = admin.firestore.Timestamp;
 const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
 const { normalizeStudentName, studentNameIdentity, hasAtLeastThreeNameParts } = require('./lib/student-name');
-const BACKEND_RELEASE = '68.5.4';
+const BACKEND_RELEASE = '68.5.5';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -27,7 +27,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '68-5-4' }
+  labels: { 'platform-release': '68-5-5' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -35,7 +35,7 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '68-5-4' }
+  labels: { 'platform-release': '68-5-5' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',

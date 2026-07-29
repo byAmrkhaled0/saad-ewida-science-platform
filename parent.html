@@ -88,12 +88,14 @@
     <div class="profile-top">
       <div>
         <h3>مسح QR الطالب</h3>
-        <p class="section-desc">وجّه كاميرا الموبايل على QR الحساب الموحّد لفتح تقرير ولي الأمر.</p>
+        <p class="section-desc">وجّه كاميرا الموبايل على QR الحساب الموحّد، أو اختر صورة الباركود من المعرض.</p>
       </div>
       <button class="small-btn danger" type="button" onclick="closeParentQrScanner()">إغلاق</button>
     </div>
     <div id="parentQrReader" class="parent-qr-reader-v38"></div>
-    <p class="section-desc">لو الكاميرا لم تعمل، استخدم إدخال الكود اليدوي بالأعلى.</p>
+    <div class="qr-source-actions"><button class="btn ghost small" type="button" onclick="document.getElementById('parentQrImageInput')?.click()"><span data-icon="image"></span> اختيار صورة QR من المعرض</button></div>
+    <input id="parentQrImageInput" type="file" accept="image/*" hidden onchange="scanParentQrImage(event)">
+    <p class="section-desc">يمكنك استخدام الكاميرا أو صورة محفوظة أو إدخال الكود يدويًا بالأعلى.</p>
   </div>
 </div>
 <div class="toast" id="toast"></div>
