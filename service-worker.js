@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6900-scheduling-warnings";
+const CACHE_NAME = "mf-science-v6911-academic-linking-audit";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",

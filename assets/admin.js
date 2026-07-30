@@ -22,6 +22,7 @@ const studentDeletionPending = new Set();
 let adminDrawerReturnFocus = null;
 let adminEditRevision = 0;
 let adminHasUnsavedChanges = false;
+let absenceWarningRowsCache = [];
 
 const adminSections = [
   ['overview','bar-chart','الرئيسية'],
@@ -115,7 +116,56 @@ window.showIssuedCodes=function(student,title='تم تسجيل الطالب بن
 function stCode(st){return st.studentCode||st.code||st.id||'';}
 function stName(st){return st.studentName||st.name||'';}
 function normalizeStudent(st){const normalize=typeof toEnglishDigits==='function'?toEnglishDigits:value=>String(value||'');const code=normalize(stCode(st)||'').toUpperCase(); return {...st,id:code,code,studentCode:code,parentCode:normalize(st.parentCode||'').toUpperCase(),studentPhone:phoneDigits(st.studentPhone),parentPhone:phoneDigits(st.parentPhone),name:stName(st),studentName:stName(st),active:st.active!==false};}
-function groupOptions(){const data=[...(adminData.groups||[]).filter(g=>g.active!==false).map(g=>g.name),...(adminData.students||[]).map(s=>s.group)].filter(Boolean); return [...new Set(data)];}
+function sameAcademicValue(left,right){return normalizeText(String(left||''))===normalizeText(String(right||''));}
+function academicValue(value){return String(value||'').trim();}
+function uniqueAcademicValues(values){
+  const found=new Map();
+  (values||[]).forEach(value=>{const shown=academicValue(value),key=normalizeText(shown);if(shown&&key&&!found.has(key))found.set(key,shown);});
+  return [...found.values()];
+}
+function scheduleByIdentity(scheduleId,group,grade=''){
+  const schedules=adminData.groups||[],wantedId=String(scheduleId||'').trim();
+  if(wantedId){
+    const direct=schedules.find(item=>String(item.id||item.firestoreId||'')===wantedId);
+    if(direct)return direct;
+  }
+  const wantedGroup=academicValue(group);
+  if(!wantedGroup)return null;
+  return schedules.find(item=>sameAcademicValue(item.name,wantedGroup)&&(!grade||!item.grade||sameAcademicValue(item.grade,grade)))||
+    schedules.find(item=>sameAcademicValue(item.name,wantedGroup))||null;
+}
+function academicStudent(raw){
+  const student=normalizeStudent(raw||{}),history=[...(student.attendance||[])].reverse();
+  const record=history.find(item=>item&&(item.scheduleId||item.group||item.grade))||{};
+  const schedule=scheduleByIdentity(student.scheduleId||record.scheduleId,student.group||record.group,student.grade||record.grade);
+  const grade=academicValue(student.grade||record.grade||schedule?.grade);
+  const group=academicValue(student.group||record.group||schedule?.name);
+  return {...student,grade,group,scheduleId:student.scheduleId||record.scheduleId||schedule?.id||''};
+}
+function adminGradeCatalog(extra=[]){
+  const configured=Array.isArray(GRADES)?GRADES:[],scheduleGrades=(adminData.groups||[]).map(item=>item.grade),studentGrades=(adminData.students||[]).map(item=>academicStudent(item).grade);
+  const additional=(extra||[]).map(item=>item?.student?academicStudent(item.student).grade:item?.grade);
+  const values=uniqueAcademicValues([...configured,...scheduleGrades,...studentGrades,...additional]);
+  const order=new Map(configured.map((value,index)=>[normalizeText(value),index]));
+  return values.sort((left,right)=>{
+    const leftOrder=order.has(normalizeText(left))?order.get(normalizeText(left)):1000;
+    const rightOrder=order.has(normalizeText(right))?order.get(normalizeText(right)):1000;
+    return leftOrder-rightOrder||left.localeCompare(right,'ar');
+  });
+}
+function adminGroupCatalog(grade='all',extra=[]){
+  const matchesGrade=value=>grade==='all'||sameAcademicValue(value,grade);
+  const scheduleGroups=(adminData.groups||[]).filter(item=>item.active!==false&&matchesGrade(item.grade)).map(item=>item.name);
+  const studentGroups=(adminData.students||[]).map(academicStudent).filter(item=>matchesGrade(item.grade)).map(item=>item.group);
+  const additional=[];
+  (extra||[]).forEach(item=>{
+    const student=item?.student?academicStudent(item.student):null,itemGrade=item?.grade||student?.grade;
+    if(!matchesGrade(itemGrade))return;
+    additional.push(item?.group,item?.currentGroup,item?.targetGroup,student?.group);
+  });
+  return uniqueAcademicValues([...scheduleGroups,...studentGroups,...additional]).sort((a,b)=>a.localeCompare(b,'ar'));
+}
+function groupOptions(){return adminGroupCatalog('all');}
 function calcStudentAdmin(st){const c=typeof calcStudent==='function'?calcStudent(st):{attendancePct:0,avg:0,final:0,level:'-'}; return c;}
 function badgeStatus(v){return v===true||v==='present'||v==='حاضر'||v==='تم الدفع'?'good':v===false||v==='absent'||v==='غائب'||v==='لم يدفع'?'danger':'warn';}
 function content(html){const el=document.getElementById('adminContent'); if(el) el.innerHTML=`<section class="admin-section active">${html}</section>`; hydrateIcons();}
@@ -123,7 +173,7 @@ function selectedGrade(){return document.getElementById('attendanceGrade')?.valu
 function selectedGroup(){return document.getElementById('attendanceGroup')?.value || 'all';}
 function selectedAttendanceMode(){return document.getElementById('attendanceMode')?.value || sessionStorage.getItem('attMode') || 'all';}
 function studentMode(student){return student?.deliveryMode==='online'?'online':'center';}
-function filterStudents(grade='all',group='all',mode=selectedAttendanceMode()){return (adminData.students||[]).map(normalizeStudent).filter(s=>(mode==='all'||studentMode(s)===mode)&&(grade==='all'||s.grade===grade)&&(group==='all'||s.group===group));}
+function filterStudents(grade='all',group='all',mode=selectedAttendanceMode()){return (adminData.students||[]).map(academicStudent).filter(s=>(mode==='all'||studentMode(s)===mode)&&(grade==='all'||sameAcademicValue(s.grade,grade))&&(group==='all'||sameAcademicValue(s.group,group)));}
 
 async function cloudDelete(collection,id){if(!window.MFCloud?.deleteDocument)throw new Error('Delete service unavailable');await window.MFCloud.deleteDocument(collection,id);return true;}
 function updateAdminSaveState(state='saved'){
@@ -399,7 +449,7 @@ function consecutiveAbsenceWarning(student){
   return dates.length>=2?{count:dates.length,dates,latestDate:dates[0]}:null;
 }
 function absenceWarnings(){
-  return (adminData.students||[]).map(normalizeStudent).filter(student=>student.active!==false).map(student=>({student,warning:consecutiveAbsenceWarning(student)})).filter(item=>item.warning).sort((a,b)=>b.warning.count-a.warning.count||String(b.warning.latestDate).localeCompare(String(a.warning.latestDate)));
+  return (adminData.students||[]).map(academicStudent).filter(student=>student.active!==false).map(student=>({student,warning:consecutiveAbsenceWarning(student)})).filter(item=>item.warning).sort((a,b)=>b.warning.count-a.warning.count||String(b.warning.latestDate).localeCompare(String(a.warning.latestDate)));
 }
 function absenceWarningMessage(student,warning=consecutiveAbsenceWarning(student)){
   const count=warning?.count||2,dates=(warning?.dates||[]).slice(0,3).reverse().join('، ');
@@ -423,26 +473,27 @@ function filterAbsenceWarnings(rows,filters={}){
   const query=normalizeText(filters.query||''),grade=String(filters.grade||'all'),group=String(filters.group||'all'),phone=String(filters.phone||'all'),minimum=Math.max(2,Number(filters.minimum)||2);
   return (rows||[]).filter(({student,warning})=>{
     const matchesQuery=!query||normalizeText(`${student.name||student.studentName||''} ${student.studentCode||''} ${student.parentPhone||''} ${student.studentPhone||''}`).includes(query);
-    const matchesGrade=grade==='all'||String(student.grade||'')===grade;
-    const matchesGroup=group==='all'||String(student.group||'')===group;
+    const matchesGrade=grade==='all'||sameAcademicValue(student.grade,grade);
+    const matchesGroup=group==='all'||sameAcademicValue(student.group,group);
     const hasPhone=Boolean(adminWhatsAppPhone(student.parentPhone));
     const matchesPhone=phone==='all'||(phone==='with'&&hasPhone)||(phone==='without'&&!hasPhone);
     return matchesQuery&&matchesGrade&&matchesGroup&&matchesPhone&&Number(warning?.count||0)>=minimum;
   });
 }
 function absenceWarningFilterValues(rows,key,grade='all'){
-  return [...new Set((rows||[]).filter(({student})=>grade==='all'||String(student.grade||'')===grade).map(({student})=>String(student[key]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
+  return uniqueAcademicValues((rows||[]).filter(({student})=>grade==='all'||sameAcademicValue(student.grade,grade)).map(({student})=>student[key])).sort((a,b)=>a.localeCompare(b,'ar'));
 }
 function absenceWarningCard({student,warning}){
   const code=safe(student.studentCode),phone=adminWhatsAppPhone(student.parentPhone);
-  return `<article class="card absence-warning-card"><div class="absence-warning-icon"><span data-icon="alert-triangle"></span></div><div class="absence-warning-copy"><div><h3>${safe(student.name)}</h3><span class="badge danger">${warning.count} غياب متتالي</span></div><p>${safe(student.grade||'-')} · ${safe(student.group||'-')} · آخر غياب ${safe(warning.latestDate)}</p><small>الحصص: ${warning.dates.slice(0,4).reverse().map(safe).join('، ')}</small><small>ولي الأمر: ${phone?safe(student.parentPhone):'لا يوجد رقم مسجل'}</small></div><div class="absence-warning-actions"><button class="small-btn ghost" type="button" onclick="copyAbsenceWarningMessage('${code}')">نسخ الرسالة</button>${phone?`<button class="small-btn whatsapp-report-btn" type="button" onclick="sendAbsenceWarningWhatsApp('${code}')">إرسال واتساب</button>`:'<button class="small-btn" type="button" disabled>أضف رقم ولي الأمر</button>'}<button class="small-btn primary" type="button" onclick="goAdminSection('students');setTimeout(()=>{const input=document.getElementById('studentUnifiedSearch');if(input){input.value='${code}';input.dispatchEvent(new Event('input',{bubbles:true}));}},80)">فتح الطالب</button></div></article>`;
+  const displayedPhone=phone?student.parentPhone:'غير مسجل';
+  return `<article class="card absence-warning-card"><header class="absence-warning-card-head"><div class="absence-warning-identity"><div class="absence-warning-icon"><span data-icon="alert-triangle"></span></div><div><h3>${safe(student.name)}</h3><small>كود الطالب: <b dir="ltr">${code}</b></small></div></div><span class="badge danger">${warning.count} غياب متتالي</span></header><div class="absence-warning-meta"><span><small>الصف</small><b>${safe(student.grade||'-')}</b></span><span><small>المجموعة</small><b>${safe(student.group||'-')}</b></span><span><small>عدد الغياب</small><b>${warning.count} حصص</b></span><span><small>رقم ولي الأمر</small><b dir="ltr">${safe(displayedPhone)}</b></span></div><p class="absence-warning-dates">آخر غياب: ${safe(warning.latestDate)} · الحصص: ${warning.dates.slice(0,4).reverse().map(safe).join('، ')}</p><div class="absence-warning-actions"><button class="small-btn ghost" type="button" onclick="copyAbsenceWarningMessage('${code}')">نسخ الرسالة</button>${phone?`<button class="small-btn whatsapp-report-btn" type="button" onclick="sendAbsenceWarningWhatsApp('${code}')">إرسال واتساب</button>`:'<button class="small-btn" type="button" disabled>أضف رقم ولي الأمر</button>'}<button class="small-btn primary" type="button" onclick="goAdminSection('students');setTimeout(()=>{const input=document.getElementById('studentUnifiedSearch');if(input){input.value='${code}';input.dispatchEvent(new Event('input',{bubbles:true}));}},80)">فتح الطالب</button></div></article>`;
 }
 function applyAbsenceWarningFilters(){
-  const allRows=absenceWarnings(),gradeSelect=document.getElementById('warningGradeFilter'),groupSelect=document.getElementById('warningGroupFilter');
+  const allRows=absenceWarningRowsCache,gradeSelect=document.getElementById('warningGradeFilter'),groupSelect=document.getElementById('warningGroupFilter');
   if(!gradeSelect||!groupSelect)return;
-  const grade=gradeSelect.value||'all',previousGroup=groupSelect.value||'all',groups=absenceWarningFilterValues(allRows,'group',grade);
+  const grade=gradeSelect.value||'all',previousGroup=groupSelect.value||'all',groups=adminGroupCatalog(grade,allRows);
   groupSelect.innerHTML=`<option value="all">كل المجموعات</option>${groups.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join('')}`;
-  groupSelect.value=groups.includes(previousGroup)?previousGroup:'all';
+  groupSelect.value=groups.some(value=>sameAcademicValue(value,previousGroup))?groups.find(value=>sameAcademicValue(value,previousGroup)):'all';
   const filtered=filterAbsenceWarnings(allRows,{
     query:document.getElementById('warningSearchFilter')?.value,
     grade,
@@ -460,7 +511,7 @@ function applyAbsenceWarningFilters(){
   hydrateIcons();
 }
 function renderWarnings(){
-  fresh();const rows=absenceWarnings(),grades=absenceWarningFilterValues(rows,'grade');
+  fresh();const rows=absenceWarnings(),grades=adminGradeCatalog(rows);absenceWarningRowsCache=rows;
   content(`<div class="section-head absence-warning-head"><div><span class="kicker"><span data-icon="alert-triangle"></span> تحذيرات الغياب</span><h2 class="section-title">طلاب غابوا حصتين متتاليتين أو أكثر</h2><p class="section-desc">القائمة تتحدث تلقائيًا من سجل الحضور. زر واتساب يفتح رسالة جاهزة على رقم ولي الأمر المسجل.</p></div><span class="absence-warning-total" id="warningFilterResult">عرض ${rows.length} من ${rows.length}</span></div><div class="card absence-warning-filters"><label class="warning-search-field"><span>بحث عن الطالب</span><input id="warningSearchFilter" type="search" placeholder="الاسم أو الكود أو رقم الهاتف"></label><label><span>الصف</span><select id="warningGradeFilter"><option value="all">كل الصفوف</option>${grades.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join('')}</select></label><label><span>المجموعة</span><select id="warningGroupFilter"><option value="all">كل المجموعات</option></select></label><label><span>عدد الغياب</span><select id="warningCountFilter"><option value="2">حصتان أو أكثر</option><option value="3">3 حصص أو أكثر</option><option value="4">4 حصص أو أكثر</option></select></label><label><span>رقم ولي الأمر</span><select id="warningPhoneFilter"><option value="all">الكل</option><option value="with">يوجد رقم</option><option value="without">بدون رقم</option></select></label><button class="small-btn ghost warning-filter-reset" id="warningFilterReset" type="button">مسح الفلاتر</button></div><div class="absence-warning-summary"><article class="card"><b id="warningVisibleStudents">0</b><small>طلاب في النتائج</small></article><article class="card"><b id="warningVisibleAbsences">0</b><small>إجمالي حصص الغياب المتتالي</small></article><article class="card"><b id="warningVisibleMissingPhones">0</b><small>بدون رقم ولي أمر</small></article></div><div class="absence-warning-list" id="absenceWarningList"></div>`);
   ['warningSearchFilter','warningGradeFilter','warningGroupFilter','warningCountFilter','warningPhoneFilter'].forEach(id=>{const element=document.getElementById(id);element?.addEventListener(id==='warningSearchFilter'?'input':'change',applyAbsenceWarningFilters);});
   document.getElementById('warningFilterReset')?.addEventListener('click',()=>{const search=document.getElementById('warningSearchFilter');if(search)search.value='';['warningGradeFilter','warningGroupFilter','warningPhoneFilter'].forEach(id=>{const element=document.getElementById(id);if(element)element.value='all';});const count=document.getElementById('warningCountFilter');if(count)count.value='2';applyAbsenceWarningFilters();});
@@ -475,19 +526,58 @@ function studentTransferRequests(){
 }
 function studentRequestStatusLabel(status){return status==='approved'?'تمت الموافقة':status==='rejected'?'مرفوض':'قيد المراجعة';}
 function studentRequestStatusClass(status){return status==='approved'?'good':status==='rejected'?'danger':'warn';}
+function studentRequestLinkedStudent(item){
+  const linked=(adminData.students||[]).find(student=>String(stCode(student))===String(item.studentCode||''));
+  return academicStudent(linked||{studentCode:item.studentCode,studentName:item.studentName,grade:item.grade,group:item.currentGroup,studentPhone:item.studentPhone,parentPhone:item.parentPhone});
+}
+function studentRequestRecord(item){
+  const student=studentRequestLinkedStudent(item),targetSchedule=scheduleByIdentity(item.targetScheduleId,item.targetGroup,item.grade||student.grade),currentSchedule=scheduleByIdentity(item.currentScheduleId,item.currentGroup,item.grade||student.grade);
+  return {
+    ...item,
+    studentName:item.studentName||student.name,
+    studentPhone:item.studentPhone||student.studentPhone,
+    parentPhone:item.parentPhone||student.parentPhone,
+    grade:academicValue(item.grade||student.grade||targetSchedule?.grade||currentSchedule?.grade),
+    currentGroup:academicValue(item.currentGroup||currentSchedule?.name||student.group),
+    targetGroup:academicValue(item.targetGroup||targetSchedule?.name),
+    targetScheduleDays:item.targetScheduleDays||targetSchedule?.days||'',
+    targetScheduleStartTime:item.targetScheduleStartTime||targetSchedule?.startTime||'',
+    targetScheduleEndTime:item.targetScheduleEndTime||targetSchedule?.endTime||''
+  };
+}
+function studentRequestRows(){
+  return studentTransferRequests().map(studentRequestRecord);
+}
+function studentRequestFilterValues(rows,key,grade='all'){
+  return uniqueAcademicValues((rows||[]).filter(item=>grade==='all'||sameAcademicValue(item.grade,grade)).map(item=>item[key])).sort((a,b)=>a.localeCompare(b,'ar'));
+}
 function studentRequestCard(item){
-  const pending=item.status==='pending',requestId=safe(item.id);
-  return `<article class="card student-transfer-request-card" data-request-status="${safe(item.status||'pending')}" data-request-grade="${safe(item.grade||'')}" data-request-search="${safe(normalizeText(`${item.studentName} ${item.studentCode} ${item.currentGroup} ${item.targetGroup} ${item.reason}`))}"><div class="student-transfer-request-head"><div class="compact-student-identity"><span class="student-avatar">${safe(String(item.studentName||'ط').trim().charAt(0))}</span><div><b>${safe(item.studentName||'طالب')}</b><small>${safe(item.studentCode)} · ${safe(item.grade||'-')}</small></div></div><span class="badge ${studentRequestStatusClass(item.status)}">${studentRequestStatusLabel(item.status)}</span></div><div class="student-transfer-route"><span><small>من</small><b>${safe(item.currentGroup||'-')}</b></span><span data-icon="chevron-left"></span><span><small>إلى</small><b>${safe(item.targetGroup||'-')}</b><em>${safe(item.targetScheduleDays||'')} ${item.targetScheduleStartTime?`· ${safe(formatTime12(item.targetScheduleStartTime))}`:''}</em></span></div><div class="student-transfer-reason"><small>سبب الطلب</small><p>${safe(item.reason||'لم يكتب سببًا')}</p>${item.teacherNote?`<small>ملاحظة المدرس: ${safe(item.teacherNote)}</small>`:''}</div>${pending?`<div class="student-transfer-actions"><button class="small-btn primary" type="button" onclick="reviewStudentTransferRequestAdmin('${requestId}','approve')">موافقة ونقل الطالب</button><button class="small-btn danger" type="button" onclick="reviewStudentTransferRequestAdmin('${requestId}','reject')">رفض الطلب</button><button class="small-btn ghost" type="button" onclick="goAdminSection('students');setTimeout(()=>{const input=document.getElementById('studentUnifiedSearch');if(input){input.value='${safe(item.studentCode)}';input.dispatchEvent(new Event('input',{bubbles:true}));}},80)">فتح الطالب</button></div>`:''}</article>`;
+  const pending=item.status==='pending',requestId=safe(item.id),student=studentRequestLinkedStudent(item),studentPhone=item.studentPhone||student.studentPhone,parentPhone=item.parentPhone||student.parentPhone;
+  const search=normalizeText(`${item.studentName} ${item.studentCode} ${studentPhone} ${parentPhone} ${item.currentGroup} ${item.targetGroup} ${item.reason}`);
+  return `<article class="card student-transfer-request-card" data-request-status="${safe(item.status||'pending')}" data-request-grade="${safe(item.grade||'')}" data-request-current-group="${safe(item.currentGroup||'')}" data-request-target-group="${safe(item.targetGroup||'')}" data-request-search="${safe(search)}"><div class="student-transfer-request-head"><div class="compact-student-identity"><span class="student-avatar">${safe(String(item.studentName||'ط').trim().charAt(0))}</span><div><b>${safe(item.studentName||'طالب')}</b><small>كود الطالب: <strong dir="ltr">${safe(item.studentCode)}</strong></small></div></div><span class="badge ${studentRequestStatusClass(item.status)}">${studentRequestStatusLabel(item.status)}</span></div><div class="student-transfer-contact-grid"><span><small>الصف</small><b>${safe(item.grade||'-')}</b></span><span><small>هاتف الطالب</small><b dir="ltr">${safe(studentPhone||'غير مسجل')}</b></span><span><small>رقم ولي الأمر</small><b dir="ltr">${safe(parentPhone||'غير مسجل')}</b></span></div><div class="student-transfer-route"><span><small>من المجموعة</small><b>${safe(item.currentGroup||'-')}</b></span><span data-icon="chevron-left"></span><span><small>إلى المجموعة</small><b>${safe(item.targetGroup||'-')}</b><em>${safe(item.targetScheduleDays||'')} ${item.targetScheduleStartTime?`· ${safe(formatTime12(item.targetScheduleStartTime))}`:''}</em></span></div><div class="student-transfer-reason"><small>سبب الطلب</small><p>${safe(item.reason||'لم يكتب سببًا')}</p>${item.teacherNote?`<small>ملاحظة المدرس: ${safe(item.teacherNote)}</small>`:''}</div>${pending?`<div class="student-transfer-actions"><button class="small-btn primary" type="button" onclick="reviewStudentTransferRequestAdmin('${requestId}','approve')">موافقة ونقل الطالب</button><button class="small-btn danger" type="button" onclick="reviewStudentTransferRequestAdmin('${requestId}','reject')">رفض الطلب</button><button class="small-btn ghost" type="button" onclick="goAdminSection('students');setTimeout(()=>{const input=document.getElementById('studentUnifiedSearch');if(input){input.value='${safe(item.studentCode)}';input.dispatchEvent(new Event('input',{bubbles:true}));}},80)">فتح الطالب</button></div>`:''}</article>`;
 }
 function applyStudentRequestFilters(){
-  const query=normalizeText(document.getElementById('studentRequestSearch')?.value||''),status=document.getElementById('studentRequestStatus')?.value||'all',grade=document.getElementById('studentRequestGrade')?.value||'all';
-  let visible=0;document.querySelectorAll('#studentTransferRequestList [data-request-status]').forEach(card=>{const show=(!query||String(card.dataset.requestSearch||'').includes(query))&&(status==='all'||card.dataset.requestStatus===status)&&(grade==='all'||card.dataset.requestGrade===grade);card.hidden=!show;if(show)visible+=1;});
+  const query=normalizeText(document.getElementById('studentRequestSearch')?.value||''),status=document.getElementById('studentRequestStatus')?.value||'all',grade=document.getElementById('studentRequestGrade')?.value||'all',group=document.getElementById('studentRequestGroup')?.value||'all';
+  let visible=0;document.querySelectorAll('#studentTransferRequestList [data-request-status]').forEach(card=>{const matchesGroup=group==='all'||sameAcademicValue(card.dataset.requestCurrentGroup,group)||sameAcademicValue(card.dataset.requestTargetGroup,group);const show=(!query||String(card.dataset.requestSearch||'').includes(query))&&(status==='all'||card.dataset.requestStatus===status)&&(grade==='all'||sameAcademicValue(card.dataset.requestGrade,grade))&&matchesGroup;card.hidden=!show;if(show)visible+=1;});
   const count=document.getElementById('studentRequestFilterCount');if(count)count.textContent=`${visible} طلب`;
 }
+function syncStudentRequestGroupFilter(){
+  const rows=studentRequestRows(),grade=document.getElementById('studentRequestGrade')?.value||'all',select=document.getElementById('studentRequestGroup');
+  if(!select)return;
+  const previous=select.value||'all',groups=adminGroupCatalog(grade,rows);
+  select.innerHTML=`<option value="all">كل المجموعات</option>${groups.map(group=>`<option value="${safe(group)}">${safe(group)}</option>`).join('')}`;
+  select.value=groups.some(value=>sameAcademicValue(value,previous))?groups.find(value=>sameAcademicValue(value,previous)):'all';
+  applyStudentRequestFilters();
+}
 function renderStudentRequests(){
-  fresh();const rows=studentTransferRequests(),pending=rows.filter(item=>item.status==='pending').length,grades=[...new Set(rows.map(item=>item.grade).filter(Boolean))];
-  content(`<div class="section-head"><div><span class="kicker"><span data-icon="user-check"></span> طلبات الطلاب</span><h2 class="section-title">طلبات نقل المجموعات</h2><p class="section-desc">الموافقة تنقل الطالب وتحدّث مجموعته وميعاده في بوابته وبوابة ولي الأمر تلقائيًا.</p></div><span class="absence-warning-total">${pending} قيد المراجعة</span></div><div class="card student-request-filters"><input id="studentRequestSearch" type="search" placeholder="بحث بالاسم أو الكود أو المجموعة"><select id="studentRequestStatus"><option value="all">كل الحالات</option><option value="pending">قيد المراجعة</option><option value="approved">تمت الموافقة</option><option value="rejected">مرفوض</option></select><select id="studentRequestGrade"><option value="all">كل الصفوف</option>${grades.map(grade=>`<option value="${safe(grade)}">${safe(grade)}</option>`).join('')}</select><span id="studentRequestFilterCount">${rows.length} طلب</span></div><div class="student-transfer-request-list" id="studentTransferRequestList">${rows.map(studentRequestCard).join('')||'<div class="card empty-state"><span class="iconbox" data-icon="user-check"></span><h3>لا توجد طلبات نقل</h3><p>ستظهر هنا الطلبات التي يرسلها الطلاب من بوابة الطالب.</p></div>'}</div>`);
-  ['studentRequestSearch','studentRequestStatus','studentRequestGrade'].forEach(id=>document.getElementById(id)?.addEventListener('input',applyStudentRequestFilters));hydrateIcons();
+  fresh();const rows=studentRequestRows(),pending=rows.filter(item=>item.status==='pending').length,approved=rows.filter(item=>item.status==='approved').length,rejected=rows.filter(item=>item.status==='rejected').length,grades=adminGradeCatalog(rows),groups=adminGroupCatalog('all',rows);
+  content(`<div class="section-head student-request-headline"><div><span class="kicker"><span data-icon="user-check"></span> طلبات الطلاب</span><h2 class="section-title">طلبات نقل المجموعات</h2><p class="section-desc">الموافقة تنقل الطالب وتحدّث مجموعته وميعاده في بوابته وبوابة ولي الأمر تلقائيًا.</p></div><span class="absence-warning-total">${pending} قيد المراجعة</span></div><div class="student-request-summary"><article class="card"><b>${pending}</b><small>قيد المراجعة</small></article><article class="card"><b>${approved}</b><small>تمت الموافقة</small></article><article class="card"><b>${rejected}</b><small>طلبات مرفوضة</small></article></div><div class="card student-request-filters"><label class="student-request-search-field"><span>بحث عن الطالب</span><input id="studentRequestSearch" type="search" placeholder="الاسم أو الكود أو رقم الهاتف"></label><label><span>الصف</span><select id="studentRequestGrade"><option value="all">كل الصفوف</option>${grades.map(grade=>`<option value="${safe(grade)}">${safe(grade)}</option>`).join('')}</select></label><label><span>المجموعة الحالية أو المطلوبة</span><select id="studentRequestGroup"><option value="all">كل المجموعات</option>${groups.map(group=>`<option value="${safe(group)}">${safe(group)}</option>`).join('')}</select></label><label><span>حالة الطلب</span><select id="studentRequestStatus"><option value="all">كل الحالات</option><option value="pending">قيد المراجعة</option><option value="approved">تمت الموافقة</option><option value="rejected">مرفوض</option></select></label><button class="small-btn ghost student-request-reset" id="studentRequestReset" type="button">مسح الفلاتر</button><span id="studentRequestFilterCount">${rows.length} طلب</span></div><div class="student-transfer-request-list" id="studentTransferRequestList">${rows.map(studentRequestCard).join('')||'<div class="card empty-state"><span class="iconbox" data-icon="user-check"></span><h3>لا توجد طلبات نقل</h3><p>ستظهر هنا الطلبات التي يرسلها الطلاب من بوابة الطالب.</p></div>'}</div>`);
+  document.getElementById('studentRequestSearch')?.addEventListener('input',applyStudentRequestFilters);
+  document.getElementById('studentRequestStatus')?.addEventListener('change',applyStudentRequestFilters);
+  document.getElementById('studentRequestGroup')?.addEventListener('change',applyStudentRequestFilters);
+  document.getElementById('studentRequestGrade')?.addEventListener('change',syncStudentRequestGroupFilter);
+  document.getElementById('studentRequestReset')?.addEventListener('click',()=>{const search=document.getElementById('studentRequestSearch');if(search)search.value='';['studentRequestGrade','studentRequestGroup','studentRequestStatus'].forEach(id=>{const element=document.getElementById(id);if(element)element.value='all';});syncStudentRequestGroupFilter();});
+  hydrateIcons();
 }
 window.reviewStudentTransferRequestAdmin=async function(requestId,action){
   const item=(adminData.studentTransferRequests||[]).find(row=>String(row.id)===String(requestId));if(!item)return aToast('طلب النقل غير موجود');
@@ -616,7 +706,29 @@ function isPendingBooking(booking){
   return Boolean(code)&&!finished&&!bookingActionPending.has(code)&&!acceptedBookingCodes.has(code);
 }
 function pendingBookings(){return (adminData.bookings||[]).filter(isPendingBooking);}
-function renderBookings(){fresh();const rows=pendingBookings();content(`<div class="section-head"><div><span class="kicker"><span data-icon="calendar"></span> طلبات التسجيل</span><h2 class="section-title">قبول الطلاب الجدد</h2><p class="section-desc">اقبل الطلب مرة واحدة؛ بعدها ينتقل الطالب تلقائيًا لقائمة الطلاب ويختفي من هنا.</p></div><button class="btn ghost" onclick="exportBookingsCSV()"><span data-icon="database"></span> تصدير CSV</button></div><div class="grid grid-3 booking-admin-summary"><div class="card"><small>طلبات تنتظر القبول</small><b class="big-num">${rows.length}</b></div><div class="card"><label for="bookingSearchAdmin">بحث سريع</label><input id="bookingSearchAdmin" placeholder="الاسم أو الكود أو الهاتف"></div><div class="card"><label for="bookingGradeAdmin">الصف</label><select id="bookingGradeAdmin"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div></div><div class="card" style="margin-top:14px"><div id="bookingRowsAdmin" class="booking-admin-list">${rows.map(bookingCard).join('')||'<div class="empty-state"><h3>لا توجد طلبات جديدة</h3><p>أي حجز جديد من الموقع سيظهر هنا فورًا.</p></div>'}</div></div>`);['bookingSearchAdmin','bookingGradeAdmin'].forEach(id=>document.getElementById(id)?.addEventListener('input',refreshBookingsTable));}
+function bookingFilterValues(rows,key,grade='all'){
+  return [...new Set((rows||[]).filter(item=>grade==='all'||String(item.grade||'')===grade).map(item=>String(item[key]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
+}
+function bookingPaymentFilterState(booking){
+  if(booking.paymentMethod==='vodafone_cash'||booking.paymentMethod==='instapay')return booking.receiptStatus==='تم اعتماد الإيصال'?'approved-receipt':'pending-receipt';
+  return 'center';
+}
+function syncBookingGroupFilter(){
+  const rows=pendingBookings(),grade=document.getElementById('bookingGradeAdmin')?.value||'all',select=document.getElementById('bookingGroupAdmin');
+  if(!select)return;
+  const previous=select.value||'all',groups=bookingFilterValues(rows,'group',grade);
+  select.innerHTML=`<option value="all">كل المجموعات</option>${groups.map(group=>`<option value="${safe(group)}">${safe(group)}</option>`).join('')}`;
+  select.value=groups.includes(previous)?previous:'all';
+  refreshBookingsTable();
+}
+function renderBookings(){
+  fresh();const rows=pendingBookings(),receipts=rows.filter(booking=>booking.receiptUrl&&booking.receiptStatus!=='تم اعتماد الإيصال').length,groups=bookingFilterValues(rows,'group');
+  content(`<div class="section-head booking-admin-head"><div><span class="kicker"><span data-icon="calendar"></span> طلبات التسجيل</span><h2 class="section-title">قبول الطلاب الجدد</h2><p class="section-desc">راجع بيانات الطالب والمجموعة ووسيلة الدفع، ثم اقبل الطلب مرة واحدة لينتقل تلقائيًا إلى قائمة الطلاب.</p></div><button class="btn ghost" onclick="exportBookingsCSV()"><span data-icon="database"></span> تصدير CSV</button></div><div class="booking-admin-summary"><article class="card"><small>طلبات تنتظر القبول</small><b id="bookingPendingCount">${rows.length}</b></article><article class="card"><small>إيصالات تحتاج مراجعة</small><b>${receipts}</b></article><article class="card"><small>النتائج المعروضة</small><b id="bookingVisibleCount">${rows.length}</b></article></div><div class="card booking-admin-filters"><label class="booking-filter-search"><span>بحث عن الطالب</span><input id="bookingSearchAdmin" type="search" placeholder="الاسم أو الكود أو رقم الهاتف"></label><label><span>الصف</span><select id="bookingGradeAdmin"><option value="all">كل الصفوف</option>${GRADES.map(grade=>`<option value="${safe(grade)}">${safe(grade)}</option>`).join('')}</select></label><label><span>المجموعة</span><select id="bookingGroupAdmin"><option value="all">كل المجموعات</option>${groups.map(group=>`<option value="${safe(group)}">${safe(group)}</option>`).join('')}</select></label><label><span>نوع الدراسة</span><select id="bookingModeAdmin"><option value="all">سنتر وأونلاين</option><option value="center">سنتر</option><option value="online">أونلاين</option></select></label><label><span>طريقة الدفع</span><select id="bookingPaymentAdmin"><option value="all">كل طرق الدفع</option><option value="pending-receipt">إيصال يحتاج مراجعة</option><option value="approved-receipt">إيصال معتمد</option><option value="center">الدفع في السنتر</option></select></label><button class="small-btn ghost booking-filter-reset" id="bookingFilterReset" type="button">مسح الفلاتر</button></div><div class="card booking-list-shell"><div id="bookingRowsAdmin" class="booking-admin-list">${rows.map(bookingCard).join('')||'<div class="empty-state"><h3>لا توجد طلبات جديدة</h3><p>أي حجز جديد من الموقع سيظهر هنا فورًا.</p></div>'}</div></div>`);
+  document.getElementById('bookingSearchAdmin')?.addEventListener('input',refreshBookingsTable);
+  document.getElementById('bookingGradeAdmin')?.addEventListener('change',syncBookingGroupFilter);
+  ['bookingGroupAdmin','bookingModeAdmin','bookingPaymentAdmin'].forEach(id=>document.getElementById(id)?.addEventListener('change',refreshBookingsTable));
+  document.getElementById('bookingFilterReset')?.addEventListener('click',()=>{const search=document.getElementById('bookingSearchAdmin');if(search)search.value='';['bookingGradeAdmin','bookingGroupAdmin','bookingModeAdmin','bookingPaymentAdmin'].forEach(id=>{const element=document.getElementById(id);if(element)element.value='all';});syncBookingGroupFilter();});
+}
 
 function scheduleCard(g){return `<article class="mobile-row schedule-admin-row"><div><b>${safe(g.name||'مجموعة بدون اسم')}</b><small>${safe(g.grade||'كل الصفوف')} · ${safe(g.days||'-')} · ${safe(formatTime12(g.startTime)||'-')} ${g.endTime?`— ${safe(formatTime12(g.endTime))}`:''}</small></div><span class="badge ${g.active===false?'danger':'good'}">${g.active===false?'متوقفة':'متاحة للحجز'}</span><div class="mobile-actions"><button class="small-btn" type="button" onclick="editSchedule('${safe(g.id)}')">تعديل</button><button class="small-btn ${g.active===false?'primary':'danger'}" type="button" onclick="toggleSchedule('${safe(g.id)}')">${g.active===false?'تفعيل':'إيقاف'}</button></div></article>`;}
 function renderSchedules(){fresh();content(`<div class="section-head"><div><span class="kicker"><span data-icon="calendar"></span> المواعيد والمجموعات</span><h2 class="section-title">إدارة المواعيد بسهولة</h2><p class="section-desc">كل موعد مرتبط بصف واحد، والمواعيد المفعلة فقط تظهر لطلاب هذا الصف في الحجز.</p></div></div><div class="grid grid-2 schedule-admin-layout"><form id="scheduleForm" class="card grid"><h3 id="scheduleFormTitle">إضافة مجموعة جديدة</h3><input name="id" type="hidden"><div class="field"><label>اسم المجموعة</label><input name="name" required placeholder="مثال: مجموعة السبت والثلاثاء"></div><div class="field"><label>الصف</label><select name="grade" required>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div><div class="field"><label>الأيام</label><input name="days" required placeholder="السبت والثلاثاء"></div><div class="grid grid-2"><div class="field"><label>من</label><input name="startTime" type="time" required></div><div class="field"><label>إلى</label><input name="endTime" type="time" required></div></div><label class="option-card"><input name="active" type="checkbox" checked> متاح للحجز الآن</label><button class="btn primary" type="submit"><span data-icon="calendar"></span> حفظ الموعد</button><button class="btn ghost" type="reset" onclick="resetScheduleForm()">إلغاء التعديل</button></form><div class="card"><h3>المواعيد الحالية</h3><div class="schedule-admin-list">${(adminData.groups||[]).map(scheduleCard).join('')||'<p class="section-desc">لا توجد مواعيد بعد. أضف أول مجموعة من النموذج.</p>'}</div></div></div>`);document.getElementById('scheduleForm').onsubmit=saveSchedule;}
@@ -624,8 +736,23 @@ window.resetScheduleForm=function(){const form=document.getElementById('schedule
 window.editSchedule=function(id){const g=(adminData.groups||[]).find(x=>String(x.id)===String(id)),form=document.getElementById('scheduleForm');if(!g||!form)return;['id','name','grade','days','startTime','endTime'].forEach(k=>{if(form.elements[k])form.elements[k].value=g[k]||'';});form.active.checked=g.active!==false;document.getElementById('scheduleFormTitle').textContent='تعديل الموعد';form.scrollIntoView({behavior:'smooth',block:'start'});};
 window.toggleSchedule=async function(id){const g=(adminData.groups||[]).find(x=>String(x.id)===String(id));if(!g)return;g.active=g.active===false;persist(g.active?'تم تفعيل الموعد':'تم إيقاف الموعد');try{await window.MFCloud?.saveGroup?.(g);}catch(e){}renderSchedules();};
 async function saveSchedule(event){event.preventDefault();const form=event.currentTarget,data=Object.fromEntries(new FormData(form).entries());data.id=data.id||`group-${Date.now()}`;data.active=form.active.checked;const index=(adminData.groups||[]).findIndex(x=>String(x.id)===String(data.id));if(index>=0)adminData.groups[index]={...adminData.groups[index],...data};else adminData.groups.push(data);persist('تم حفظ الموعد');try{await window.MFCloud?.saveGroup?.(data);}catch(e){aToast('تم الحفظ محليًا وتعذرت المزامنة الآن');}renderSchedules();}
-window.refreshBookingsTable=function(){let rows=pendingBookings();const query=(document.getElementById('bookingSearchAdmin')?.value||'').trim().toLowerCase(),grade=document.getElementById('bookingGradeAdmin')?.value||'all';if(query)rows=rows.filter(b=>[b.code,b.name,b.studentName,b.parentPhone,b.studentPhone].some(value=>String(value||'').toLowerCase().includes(query)));if(grade!=='all')rows=rows.filter(b=>b.grade===grade);const box=document.getElementById('bookingRowsAdmin');if(box)box.innerHTML=rows.map(bookingCard).join('')||'<div class="empty-state"><h3>لا توجد نتائج</h3><p>غيّر البحث أو الصف.</p></div>';};
-function bookingCard(b){const mode=studentMode(b),key=bookingKey(b),method=b.paymentMethod==='vodafone_cash'?'فودافون كاش':b.paymentMethod==='instapay'?'إنستا باي':'الدفع في السنتر',receiptApproved=b.receiptStatus==='تم اعتماد الإيصال';return `<article class="booking-admin-card compact-booking-card" data-booking-code="${safe(key)}"><div class="compact-booking-main"><span class="student-avatar">${safe(String(b.name||b.studentName||'ط').charAt(0))}</span><div><div class="compact-booking-title"><h3>${safe(b.name||b.studentName)}</h3><span class="badge ${mode==='online'?'online-mode':'good'}">${mode==='online'?'أونلاين':'سنتر'}</span><span class="badge warn">قيد التسجيل</span></div><small>${safe(b.code||key)} · ${safe(b.grade)} · ${safe(b.group)}</small></div></div><div class="compact-booking-meta"><span><small>الطالب</small><b dir="ltr">${safe(b.studentPhone||'-')}</b></span><span><small>ولي الأمر</small><b dir="ltr">${safe(b.parentPhone||'-')}</b></span><span><small>الدفع</small><b>${safe(method)}</b></span><span><small>حالة الإيصال</small><b>${safe(b.receiptStatus||'غير مطلوب')}</b></span></div><div class="compact-booking-actions">${b.receiptUrl?`<a class="small-btn" href="${safeExternalUrl(b.receiptUrl)}" target="_blank" rel="noopener noreferrer">عرض الإيصال</a><button class="small-btn ${receiptApproved?'ghost':'primary'}" type="button" onclick="reviewBookingReceipt('${safe(key)}',true)">اعتماد الإيصال</button><button class="small-btn danger" type="button" onclick="reviewBookingReceipt('${safe(key)}',false)">رفض الإيصال</button>`:''}<button class="small-btn primary" type="button" onclick="approveBooking('${safe(key)}')"><span data-icon="user-check"></span> قبول</button><button class="small-btn danger" type="button" onclick="deleteBooking('${safe(key)}')"><span data-icon="trash"></span> رفض</button></div></article>`;}
+window.refreshBookingsTable=function(){
+  let rows=pendingBookings();
+  const query=normalizeText(document.getElementById('bookingSearchAdmin')?.value||''),grade=document.getElementById('bookingGradeAdmin')?.value||'all',group=document.getElementById('bookingGroupAdmin')?.value||'all',mode=document.getElementById('bookingModeAdmin')?.value||'all',payment=document.getElementById('bookingPaymentAdmin')?.value||'all';
+  if(query)rows=rows.filter(booking=>normalizeText(`${booking.code||''} ${booking.name||booking.studentName||''} ${booking.parentPhone||''} ${booking.studentPhone||''}`).includes(query));
+  if(grade!=='all')rows=rows.filter(booking=>booking.grade===grade);
+  if(group!=='all')rows=rows.filter(booking=>booking.group===group);
+  if(mode!=='all')rows=rows.filter(booking=>studentMode(booking)===mode);
+  if(payment!=='all')rows=rows.filter(booking=>bookingPaymentFilterState(booking)===payment);
+  const box=document.getElementById('bookingRowsAdmin'),visible=document.getElementById('bookingVisibleCount');
+  if(visible)visible.textContent=String(rows.length);
+  if(box)box.innerHTML=rows.map(bookingCard).join('')||'<div class="empty-state"><span class="iconbox" data-icon="search"></span><h3>لا توجد نتائج مطابقة</h3><p>غيّر البحث أو امسح الفلاتر لعرض باقي الحجوزات.</p></div>';
+  hydrateIcons();
+};
+function bookingCard(b){
+  const mode=studentMode(b),key=bookingKey(b),method=b.paymentMethod==='vodafone_cash'?'فودافون كاش':b.paymentMethod==='instapay'?'إنستا باي':'الدفع في السنتر',receiptApproved=b.receiptStatus==='تم اعتماد الإيصال',receiptLabel=b.receiptUrl?(b.receiptStatus||'بانتظار المراجعة'):'غير مطلوب';
+  return `<article class="booking-request-card" data-booking-code="${safe(key)}"><header class="booking-request-head"><div class="compact-booking-main"><span class="student-avatar">${safe(String(b.name||b.studentName||'ط').charAt(0))}</span><div><h3>${safe(b.name||b.studentName||'طالب جديد')}</h3><small>كود الحجز: <b dir="ltr">${safe(b.code||key)}</b></small></div></div><div class="booking-request-badges"><span class="badge ${mode==='online'?'online-mode':'good'}">${mode==='online'?'أونلاين':'سنتر'}</span><span class="badge warn">قيد التسجيل</span></div></header><div class="booking-request-meta"><span><small>الصف</small><b>${safe(b.grade||'-')}</b></span><span><small>المجموعة</small><b>${safe(b.group||'تُحدد لاحقًا')}</b></span><span><small>هاتف الطالب</small><b dir="ltr">${safe(b.studentPhone||'غير مسجل')}</b></span><span><small>رقم ولي الأمر</small><b dir="ltr">${safe(b.parentPhone||'غير مسجل')}</b></span><span><small>طريقة الدفع</small><b>${safe(method)}</b></span><span><small>حالة الإيصال</small><b>${safe(receiptLabel)}</b></span></div><footer class="booking-request-actions">${b.receiptUrl?`<a class="small-btn ghost" href="${safeExternalUrl(b.receiptUrl)}" target="_blank" rel="noopener noreferrer">عرض الإيصال</a><button class="small-btn ${receiptApproved?'ghost':'primary'}" type="button" onclick="reviewBookingReceipt('${safe(key)}',true)">اعتماد الإيصال</button><button class="small-btn danger" type="button" onclick="reviewBookingReceipt('${safe(key)}',false)">رفض الإيصال</button>`:''}<button class="small-btn primary booking-accept-button" type="button" onclick="approveBooking('${safe(key)}')"><span data-icon="user-check"></span> قبول الطالب</button><button class="small-btn danger booking-reject-button" type="button" onclick="deleteBooking('${safe(key)}')"><span data-icon="trash"></span> رفض الحجز</button></footer></article>`;
+}
 window.reviewBookingReceipt=async function(code,approved){const b=adminData.bookings.find(item=>bookingMatches(item,code));if(!b)return aToast('الحجز غير موجود');try{const result=await window.MFCloud?.reviewBookingReceipt?.(code,approved);b.receiptStatus=result?.receiptStatus||(approved?'تم اعتماد الإيصال':'الإيصال مرفوض');saveData(adminData);aToast(b.receiptStatus);renderBookings();}catch(error){aToast(adminActionErrorMessage(error,'تعذر مراجعة الإيصال.'));}};
 window.approveBooking=async function(code){
   code=String(code||'');
@@ -638,7 +765,7 @@ window.approveBooking=async function(code){
   card?.querySelectorAll('button').forEach(button=>button.disabled=true);
   adminData.bookings=adminData.bookings.filter(item=>!bookingMatches(item,code));
   saveData(adminData);
-  requestAnimationFrame(()=>{card?.remove();const count=document.querySelector('.booking-admin-summary .big-num');if(count)count.textContent=String(pendingBookings().length);});
+  requestAnimationFrame(()=>{card?.remove();const remaining=pendingBookings().length,count=document.getElementById('bookingPendingCount'),visible=document.getElementById('bookingVisibleCount');if(count)count.textContent=String(remaining);if(visible)visible.textContent=String(remaining);});
   try{
     const created=await window.MFCloud?.approveBooking?.(b);
     if(!created?.studentCode||!created?.parentCode)throw new Error('تعذر إنشاء الأكواد');
@@ -667,7 +794,7 @@ function findAttendance(st,date){
 }
 function classProgressRows(st,type){return type==='recitation'?(st.recitations||[]):(st.homeworks||[]);}
 function findClassProgress(st,type,date=attendanceDate){return classProgressRows(st,type).find(row=>String(row.date||'')===String(date)&&(row.completed===true||row.approved===true||String(row.status||'').startsWith('تم')));}
-function attendanceRecord(st,status,method){const s=normalizeStudent(st),scheduleId=String(s.scheduleId||''),sessionKey=`${attendanceDate}_${scheduleId||normalizeText(`${studentMode(s)}_${s.grade}_${s.group}`)}`;st.studentCode=s.studentCode;st.code=s.studentCode;st.name=s.name;st.studentName=s.name;return {studentId:s.studentCode,studentCode:s.studentCode,studentName:s.name,grade:s.grade,group:s.group,deliveryMode:studentMode(s),scheduleId,sessionKey,status,date:attendanceDate,time:status==='present'?timeNow():null,method,scannedBy:currentStaff?.email||currentStaff?.uid||'teacher',createdAt:new Date().toISOString()};}
+function attendanceRecord(st,status,method){const s=academicStudent(st),scheduleId=String(s.scheduleId||''),sessionKey=`${attendanceDate}_${scheduleId||normalizeText(`${studentMode(s)}_${s.grade}_${s.group}`)}`;st.studentCode=s.studentCode;st.code=s.studentCode;st.name=s.name;st.studentName=s.name;return {studentId:s.studentCode,studentCode:s.studentCode,studentName:s.name,grade:s.grade,group:s.group,deliveryMode:studentMode(s),scheduleId,sessionKey,status,date:attendanceDate,time:status==='present'?timeNow():null,method,scannedBy:currentStaff?.email||currentStaff?.uid||'teacher',createdAt:new Date().toISOString()};}
 async function saveAttendanceRecord(st,status,method){st.attendance=st.attendance||[];const before=st.attendance.map(item=>({...item})),record=attendanceRecord(st,status,method),existing=findAttendance(st,attendanceDate);if(existing?.id)record.id=existing.id;if(existing)Object.assign(existing,record);else st.attendance.push(record);saveData(adminData);try{if(!window.MFCloud?.upsertAttendance)throw new Error('Attendance service unavailable');const saved=await window.MFCloud.upsertAttendance(record);if(!saved?.id)throw new Error('تعذر تأكيد حفظ الحضور');return saved;}catch(error){st.attendance=before;saveData(adminData);throw error;}}
 async function registerQrAttendance(code,options={}){fresh();const keepScannerOpen=options.keepScannerOpen===true,normalizedCode=String(code||'').trim().toUpperCase(),st=adminData.students.map(normalizeStudent).find(s=>String(s.studentCode).trim().toUpperCase()===normalizedCode);if(!st){aToast('لم يتم العثور على طالب بهذا الكود.');return {ok:false,message:'لم يتم العثور على طالب بهذا الكود'};}const original=adminData.students.find(s=>stCode(s)===st.studentCode),existing=findAttendance(original,attendanceDate);if(existing?.status==='present'){aToast(`${st.name} مسجل حضور بالفعل اليوم.`);return {ok:false,alreadyPresent:true,studentName:st.name,message:'مسجل حضور بالفعل'};}try{await saveAttendanceRecord(original,'present','qr_scan');aToast(`تم تسجيل حضور ${st.name}`);if(!keepScannerOpen)renderAttendance();return {ok:true,studentName:st.name,studentCode:st.studentCode,time:timeNow()};}catch(error){const message=adminActionErrorMessage(error,'تعذر تسجيل الحضور.');aToast(message);return {ok:false,message};}}
 window.quickPresent=function(code){attendanceDate=isoDateAdmin(); registerQrAttendance(code);};
@@ -687,12 +814,13 @@ function attendanceRosterHTML(){const rows=filterStudents(selectedGrade(),select
 window.setAttendanceStatus=async function(code,status){const st=adminData.students.find(item=>String(stCode(item))===String(code));if(!st)return aToast('الطالب غير موجود');try{await saveAttendanceRecord(st,status,'manual_button');const warning=status==='absent'?consecutiveAbsenceWarning(st):null;aToast(status==='present'?'تم تسجيل الحضور':warning?`تم تسجيل الغياب — ظهر تحذير بعد ${warning.count} حصص متتالية`:'تم تسجيل الغياب');}catch(error){aToast(adminActionErrorMessage(error,'تعذر حفظ حالة الحضور.'));}renderAttendance();};
 window.toggleClassProgress=async function(code,type){
   const student=adminData.students.find(item=>String(stCode(item))===String(code));if(!student)return aToast('الطالب غير موجود');
+  const academic=academicStudent(student);
   const actionKey=`${code}:${type}:${attendanceDate}`;
   if(classProgressActionPending.has(actionKey))return;
   const existing=findClassProgress(student,type),completed=!existing,key=type==='recitation'?'recitations':'homeworks';
   student[key]=student[key]||[];
   const before=student[key].slice();
-  const record={id:`${code}_${attendanceDate}_class`,studentCode:code,studentName:stName(student),grade:student.grade||'',group:student.group||'',academicYear:student.academicYear||'',term:student.term||'',type,date:attendanceDate,time:timeNow(),completed,approved:completed,method:'teacher_class_check',status:completed?(type==='recitation'?'تم التسميع':'تم عمل الواجب'):''};
+  const record={id:`${code}_${attendanceDate}_class`,studentCode:code,studentName:academic.name,grade:academic.grade,group:academic.group,academicYear:student.academicYear||'',term:student.term||'',type,date:attendanceDate,time:timeNow(),completed,approved:completed,method:'teacher_class_check',status:completed?(type==='recitation'?'تم التسميع':'تم عمل الواجب'):''};
   student[key]=student[key].filter(row=>!(String(row.date||'')===String(attendanceDate)&&(row.type===type||row.method==='teacher_class_check')));
   if(completed)student[key].push(record);
   classProgressActionPending.add(actionKey);
@@ -874,7 +1002,7 @@ window.editStaffAccount=function(uid){const row=(window.__staffRows||[]).find(it
 window.toggleStaffAccount=async function(uid,active){try{await window.MFCloud.setStaffAccountState(uid,active);aToast(active?'تم تفعيل الحساب':'تم إيقاف الحساب');await refreshStaffAccounts();}catch(error){aToast(adminActionErrorMessage(error,'تعذر تغيير حالة الحساب.'));}};
 
 function reportMonthPrefix(){return document.getElementById('reportMonth')?.value||currentPaymentMonthKey();}
-function reportStudentRows(){const mode=document.getElementById('reportMode')?.value||'all',grade=document.getElementById('reportGrade')?.value||'all';return (adminData.students||[]).map(normalizeStudent).filter(student=>(mode==='all'||studentMode(student)===mode)&&(grade==='all'||student.grade===grade));}
+function reportStudentRows(){const mode=document.getElementById('reportMode')?.value||'all',grade=document.getElementById('reportGrade')?.value||'all';return (adminData.students||[]).map(academicStudent).filter(student=>(mode==='all'||studentMode(student)===mode)&&(grade==='all'||sameAcademicValue(student.grade,grade)));}
 window.exportReportV63=function(){const month=reportMonthPrefix(),rows=reportStudentRows().map(student=>{const payment=paymentRecordFor(student.studentCode,month)||{},attendance=(student.attendance||[]).filter(item=>String(item.date||'').startsWith(month)),present=attendance.filter(item=>item.status==='present').length,grades=(student.grades||[]).filter(item=>String(item.date||item.submittedAt||'').startsWith(month)),avg=grades.length?Math.round(grades.reduce((sum,item)=>sum+Number(item.score||0),0)/grades.length):0;return [student.studentCode,student.name,studentMode(student)==='online'?'أونلاين':'سنتر',student.grade,student.group,payment.paid?'تم الدفع':'لم يدفع',payment.paymentDate||'',present,attendance.length,avg];});exportCSV(`platform-report-${month}.csv`,[['الكود','الطالب','النوع','الصف','المجموعة','الدفع','تاريخ الدفع','الحضور','إجمالي الحصص','متوسط الدرجات'],...rows]);};
 function renderReports(){
   fresh();const month=sessionStorage.getItem('reportMonth')||currentPaymentMonthKey();
@@ -955,7 +1083,7 @@ function matchingSchedules(mode,grade,term=''){
 
 function renderStudentsUnifiedV62(){
   fresh();
-  const all=(adminData.students||[]).map(normalizeStudent);
+  const all=(adminData.students||[]).map(academicStudent);
   content(`<div class="section-head"><div><span class="kicker"><span data-icon="users"></span> الطلاب</span><div class="student-section-heading"><h2 class="section-title">كل الطلاب في مكان واحد</h2><span class="student-total-pill"><span>إجمالي الطلاب</span><b id="studentUnifiedCount">${all.length}</b></span></div><p class="section-desc">فلتر طلاب السنتر أو الأونلاين، وأضف كل طالب إلى موعد مطابق لنوع دراسته وصفه.</p></div><div class="section-head-actions"><button class="btn ghost" type="button" onclick="openStudentCreateModal('center')">+ إضافة طالب سنتر</button><button class="btn primary" type="button" onclick="openStudentCreateModal('online')">+ إضافة طالب أونلاين</button></div></div>
   <div class="card student-filter-bar unified-student-filters"><input id="studentUnifiedSearch" type="search" placeholder="بحث بالاسم أو الكود أو الهاتف"><select id="studentUnifiedMode"><option value="all">كل الطلاب</option><option value="center">طلاب السنتر</option><option value="online">طلاب الأونلاين</option></select><select id="studentUnifiedGrade"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><select id="studentUnifiedPayment"><option value="all">كل حالات الدفع</option><option value="paid">تم الدفع</option><option value="unpaid">لم يدفع</option></select></div>
   <div id="studentsUnifiedList">${professionalStudentCards(all)}</div>
@@ -1164,9 +1292,9 @@ function renderPaymentsMobileV622(){fresh();const all=(adminData.students||[]).m
 
 window.closePaymentHistory=function(){document.getElementById('paymentHistoryModal')?.remove();};
 window.openPaymentHistory=function(code){const student=adminData.students.find(item=>String(stCode(item))===String(code));if(!student)return;const rows=(adminData.paymentRecords||[]).filter(item=>String(item.studentCode)===String(code)).sort((a,b)=>String(b.monthKey).localeCompare(String(a.monthKey)));closePaymentHistory();document.body.insertAdjacentHTML('beforeend',`<div class="admin-form-modal" id="paymentHistoryModal"><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">سجل الاشتراكات</span><h2>${safe(stName(student))}</h2></div><button class="small-btn danger" onclick="closePaymentHistory()">إغلاق</button></div><div class="admin-clean-list">${rows.map(item=>`<article class="payment-history-row"><div><b>${safe(item.monthLabel||paymentMonthLabel(item.monthKey))}</b><small>${safe(item.paymentDate||'لم يسجل تاريخ')} · ${safe(item.method||'')}</small></div><span class="badge ${item.paid?'good':'warn'}">${item.paid?'تم الدفع':'لم يدفع'}</span><strong>${Number(item.amount||0)?safe(item.amount)+' ج.م':''}</strong></article>`).join('')||'<div class="empty-state"><h3>لا يوجد سجل دفع بعد</h3></div>'}</div></div></div>`);};
-window.exportMonthlyPayments=function(){const monthKey=document.getElementById('paymentMonth')?.value||currentPaymentMonthKey(),rows=(adminData.students||[]).map(normalizeStudent).map(student=>{const record=paymentRecordFor(student.studentCode,monthKey)||{};return [student.studentCode,student.name,student.deliveryMode==='online'?'أونلاين':'سنتر',student.grade,student.group,paymentMonthLabel(monthKey),record.paid?'تم الدفع':'لم يدفع',record.paymentDate||'',record.amount||'',record.method||''];});exportCSV(`payments-${monthKey}.csv`,[['الكود','الطالب','النوع','الصف','المجموعة','الشهر','الحالة','التاريخ','المبلغ','الطريقة'],...rows]);};
+window.exportMonthlyPayments=function(){const monthKey=document.getElementById('paymentMonth')?.value||currentPaymentMonthKey(),rows=(adminData.students||[]).map(academicStudent).map(student=>{const record=paymentRecordFor(student.studentCode,monthKey)||{};return [student.studentCode,student.name,student.deliveryMode==='online'?'أونلاين':'سنتر',student.grade,student.group,paymentMonthLabel(monthKey),record.paid?'تم الدفع':'لم يدفع',record.paymentDate||'',record.amount||'',record.method||''];});exportCSV(`payments-${monthKey}.csv`,[['الكود','الطالب','النوع','الصف','المجموعة','الشهر','الحالة','التاريخ','المبلغ','الطريقة'],...rows]);};
 function renderMonthlyPaymentsV63(){
-  fresh();const all=(adminData.students||[]).map(normalizeStudent),savedMonth=sessionStorage.getItem('paymentMonth')||currentPaymentMonthKey();
+  fresh();const all=(adminData.students||[]).map(academicStudent),savedMonth=sessionStorage.getItem('paymentMonth')||currentPaymentMonthKey();
   content(`<div class="section-head"><div><span class="kicker"><span data-icon="database"></span> الدفع والاشتراكات</span><h2 class="section-title">اشتراك شهري للسنتر والأونلاين</h2><p class="section-desc">كل شهر له سجل مستقل؛ تغيير حالة شهر لا يمسح الشهور السابقة.</p></div><button class="btn ghost" type="button" onclick="exportMonthlyPayments()">تصدير الشهر CSV</button></div><div class="card monthly-payment-toolbar"><div class="field"><label>شهر الاشتراك</label><input id="paymentMonth" type="month" value="${safe(savedMonth)}"></div><div class="field"><label>المبلغ الافتراضي</label><input id="paymentAmount" type="number" min="0" inputmode="decimal" placeholder="اختياري"></div><div class="field"><label>طريقة الدفع</label><select id="paymentMethod"><option>نقدي</option><option>تحويل</option><option>محفظة إلكترونية</option><option>أخرى</option></select></div></div><div class="card student-filter-bar"><select id="paymentMode"><option value="all">السنتر والأونلاين</option><option value="center">طلاب السنتر</option><option value="online">طلاب الأونلاين</option></select><select id="paymentGrade"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><input id="paymentSearch" type="search" placeholder="بحث بالاسم أو الكود"><select id="paymentState"><option value="all">كل الحالات</option><option value="paid">تم الدفع</option><option value="unpaid">لم يدفع</option></select></div><div id="paymentStudentList"></div>`);
   const render=()=>{const monthKey=document.getElementById('paymentMonth').value||currentPaymentMonthKey(),mode=document.getElementById('paymentMode').value,grade=document.getElementById('paymentGrade').value,q=normalizeText(document.getElementById('paymentSearch').value),state=document.getElementById('paymentState').value;sessionStorage.setItem('paymentMonth',monthKey);const rows=all.filter(s=>{const record=paymentRecordFor(s.studentCode,monthKey),paid=record?.paid===true;return (mode==='all'||studentMode(s)===mode)&&(grade==='all'||s.grade===grade)&&(!q||normalizeText(`${s.name} ${s.studentCode}`).includes(q))&&(state==='all'||(state==='paid')===paid);});document.getElementById('paymentStudentList').innerHTML=`<div class="payment-row-list">${rows.map(s=>{const record=paymentRecordFor(s.studentCode,monthKey),paid=record?.paid===true,code=safe(s.studentCode);return `<article class="payment-student-row ${paid?'is-paid':'is-unpaid'}"><div class="compact-student-identity"><span class="student-avatar">${safe(String(s.name||'ط').charAt(0))}</span><div><b>${safe(s.name)}</b><small>${code} · ${safe(s.grade)} · ${safe(s.group||'-')}</small></div></div><span class="badge ${s.deliveryMode==='online'?'online-mode':'good'}">${s.deliveryMode==='online'?'أونلاين':'سنتر'}</span><span class="badge ${paid?'good':'warn'}">${paid?'تم الدفع':'لم يدفع'}</span><div class="payment-toggle-actions"><button class="small-btn ${paid?'primary':'ghost'}" onclick="setPaidUnified('${code}',true)">دفع</button><button class="small-btn ${!paid?'danger':'ghost'}" onclick="setPaidUnified('${code}',false)">لم يدفع</button><button class="small-btn ghost" onclick="openPaymentHistory('${code}')">السجل</button></div></article>`;}).join('')||'<div class="card empty-state"><h3>لا يوجد طلاب مطابقون</h3></div>'}</div>`;hydrateIcons();};
   ['paymentMonth','paymentMode','paymentGrade','paymentSearch','paymentState'].forEach(id=>document.getElementById(id).oninput=render);render();hydrateIcons();

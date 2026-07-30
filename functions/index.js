@@ -23,7 +23,7 @@ const {
   assignmentDueDatePassed,
   assignmentSubmissionIsOpen
 } = require('./lib/assignment-schedule');
-const BACKEND_RELEASE = '69.0.0';
+const BACKEND_RELEASE = '69.1.1';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -33,7 +33,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '69-0-0' }
+  labels: { 'platform-release': '69-1-1' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -41,7 +41,7 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '69-0-0' }
+  labels: { 'platform-release': '69-1-1' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
@@ -709,6 +709,8 @@ exports.createStudentTransferRequest = onCall(CALLABLE_OPTIONS, async request =>
     id: ref.id,
     studentCode,
     studentName: text(found.data.studentName || found.data.name, 100),
+    studentPhone: digits(found.data.studentPhone),
+    parentPhone: digits(found.data.parentPhone),
     grade: text(found.data.grade, 80),
     deliveryMode: found.data.deliveryMode === 'online' ? 'online' : 'center',
     academicYear: text(found.data.academicYear, 20),

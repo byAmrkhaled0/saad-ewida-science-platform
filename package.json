@@ -1,6 +1,6 @@
 {
   "name": "saad-ewida-science-platform",
-  "version": "69.0.0",
+  "version": "69.1.1",
   "private": true,
   "scripts": {
     "dev": "npm run build && node local-server.js",
@@ -11,7 +11,7 @@
     "firebase:functions": "npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only functions",
     "firebase:hosting": "npm run build && npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only hosting",
     "firebase:prepare": "npm run test && npm run build && npm --prefix functions ci --omit=dev",
-    "test": "node scripts/verify.js && node --test scripts/assignment-schedule.test.js scripts/monthly-incentive.test.js scripts/student-name.test.js",
+    "test": "node scripts/verify.js && node --test scripts/admin-academic-linking.test.js scripts/assignment-schedule.test.js scripts/monthly-incentive.test.js scripts/student-name.test.js",
     "firebase:deploy:backend": "npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only firestore:rules,firestore:indexes,storage,functions",
     "firebase:deploy:all": "npm run test && npm run build && npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only firestore:rules,firestore:indexes,storage,functions,hosting",
     "deploy:production": "powershell -ExecutionPolicy Bypass -File ./deploy-production.ps1"

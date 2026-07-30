@@ -665,3 +665,427 @@ body.admin-dashboard-active .unified-student-filters{grid-template-columns:2fr r
     grid-template-columns:repeat(2,minmax(0,1fr))!important;
   }
 }
+
+/* V69.1 — clean responsive booking, absence-warning and student-request pages */
+body.admin-dashboard-active .booking-admin-summary,
+body.admin-dashboard-active .student-request-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:12px;
+}
+body.admin-dashboard-active .booking-admin-summary article,
+body.admin-dashboard-active .student-request-summary article{
+  display:grid;
+  place-items:center;
+  min-height:86px;
+  padding:12px!important;
+  text-align:center;
+}
+body.admin-dashboard-active .booking-admin-summary b,
+body.admin-dashboard-active .student-request-summary b{
+  color:var(--brand);
+  font-size:1.55rem;
+  line-height:1;
+}
+body.admin-dashboard-active .booking-admin-summary small,
+body.admin-dashboard-active .student-request-summary small{
+  margin-top:7px;
+  color:var(--muted);
+  font-size:.7rem;
+  font-weight:900;
+}
+body.admin-dashboard-active .booking-admin-filters,
+body.admin-dashboard-active .student-request-filters{
+  display:grid;
+  grid-template-columns:minmax(220px,1.65fr) repeat(4,minmax(130px,1fr)) auto;
+  align-items:end;
+  gap:9px;
+  margin-bottom:12px;
+  padding:13px!important;
+}
+body.admin-dashboard-active .student-request-filters{
+  grid-template-columns:minmax(220px,1.65fr) repeat(3,minmax(140px,1fr)) auto auto;
+}
+body.admin-dashboard-active .booking-admin-filters label,
+body.admin-dashboard-active .student-request-filters label{
+  display:grid;
+  gap:5px;
+  min-width:0;
+}
+body.admin-dashboard-active .booking-admin-filters label>span,
+body.admin-dashboard-active .student-request-filters label>span{
+  color:var(--muted);
+  font-size:.68rem;
+  font-weight:900;
+}
+body.admin-dashboard-active .booking-admin-filters input,
+body.admin-dashboard-active .booking-admin-filters select,
+body.admin-dashboard-active .student-request-filters input,
+body.admin-dashboard-active .student-request-filters select{
+  width:100%;
+  min-width:0!important;
+  min-height:42px!important;
+  padding:8px 10px;
+  border:1px solid var(--border);
+  border-radius:11px!important;
+  background:var(--surface);
+  color:var(--text);
+  font:inherit;
+  font-size:.76rem;
+  font-weight:800;
+}
+body.admin-dashboard-active .booking-filter-reset,
+body.admin-dashboard-active .student-request-reset{
+  width:100%;
+  min-height:42px;
+  margin:0!important;
+  white-space:nowrap;
+}
+body.admin-dashboard-active #studentRequestFilterCount{
+  align-self:center;
+  color:var(--muted);
+  font-size:.72rem;
+  font-weight:950;
+  white-space:nowrap;
+}
+body.admin-dashboard-active .booking-list-shell{
+  padding:10px!important;
+}
+body.admin-dashboard-active .booking-admin-list{
+  gap:9px!important;
+}
+body.admin-dashboard-active .booking-request-card{
+  display:grid;
+  gap:11px;
+  min-width:0;
+  padding:14px;
+  border:1px solid var(--border);
+  border-inline-start:4px solid var(--brand);
+  border-radius:17px;
+  background:linear-gradient(145deg,var(--surface),var(--surface-2));
+  box-shadow:0 7px 22px rgba(15,72,82,.055);
+}
+body.admin-dashboard-active .booking-request-card.is-processing{
+  opacity:.58;
+  pointer-events:none;
+}
+body.admin-dashboard-active .booking-request-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-width:0;
+}
+body.admin-dashboard-active .booking-request-head .compact-booking-main{
+  display:flex!important;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+body.admin-dashboard-active .booking-request-head h3{
+  margin:0 0 3px;
+  overflow-wrap:anywhere;
+  font-size:.98rem;
+}
+body.admin-dashboard-active .booking-request-head small{
+  color:var(--muted);
+  font-size:.68rem;
+  font-weight:850;
+}
+body.admin-dashboard-active .booking-request-badges{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  flex-wrap:wrap;
+}
+body.admin-dashboard-active .booking-request-meta,
+body.admin-dashboard-active .student-transfer-contact-grid,
+body.admin-dashboard-active .absence-warning-meta{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:7px;
+  min-width:0;
+}
+body.admin-dashboard-active .student-transfer-contact-grid{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+body.admin-dashboard-active .absence-warning-meta{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+body.admin-dashboard-active .booking-request-meta>span,
+body.admin-dashboard-active .student-transfer-contact-grid>span,
+body.admin-dashboard-active .absence-warning-meta>span{
+  display:grid;
+  align-content:center;
+  gap:3px;
+  min-width:0;
+  min-height:58px;
+  padding:8px 9px;
+  border:1px solid color-mix(in srgb,var(--border) 78%,transparent);
+  border-radius:12px;
+  background:var(--surface-2);
+}
+body.admin-dashboard-active .booking-request-meta small,
+body.admin-dashboard-active .student-transfer-contact-grid small,
+body.admin-dashboard-active .absence-warning-meta small{
+  color:var(--muted);
+  font-size:.61rem;
+  font-weight:900;
+}
+body.admin-dashboard-active .booking-request-meta b,
+body.admin-dashboard-active .student-transfer-contact-grid b,
+body.admin-dashboard-active .absence-warning-meta b{
+  min-width:0;
+  overflow-wrap:anywhere;
+  font-size:.72rem;
+}
+body.admin-dashboard-active .booking-request-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  flex-wrap:wrap;
+  padding-top:10px;
+  border-top:1px solid var(--border);
+}
+body.admin-dashboard-active .booking-request-actions>*{
+  margin:0;
+}
+body.admin-dashboard-active .absence-warning-card{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:10px;
+  padding:13px 15px!important;
+}
+body.admin-dashboard-active .absence-warning-card-head,
+body.admin-dashboard-active .absence-warning-identity{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+body.admin-dashboard-active .absence-warning-card-head{
+  justify-content:space-between;
+}
+body.admin-dashboard-active .absence-warning-identity h3{
+  margin:0 0 3px;
+  font-size:.98rem;
+}
+body.admin-dashboard-active .absence-warning-identity small{
+  color:var(--muted);
+  font-size:.67rem;
+  font-weight:850;
+}
+body.admin-dashboard-active .absence-warning-dates{
+  margin:0;
+  color:var(--muted);
+  font-size:.7rem;
+  font-weight:800;
+  line-height:1.65;
+}
+body.admin-dashboard-active .student-transfer-request-card{
+  min-width:0;
+  padding:14px!important;
+  overflow:hidden;
+}
+body.admin-dashboard-active .student-transfer-request-card[hidden]{
+  display:none!important;
+}
+body.admin-dashboard-active .student-transfer-request-head .compact-student-identity{
+  min-width:0;
+}
+body.admin-dashboard-active .student-transfer-request-head .compact-student-identity>div{
+  min-width:0;
+}
+body.admin-dashboard-active .student-transfer-request-head .compact-student-identity b{
+  overflow-wrap:anywhere;
+}
+
+@media(max-width:1180px){
+  body.admin-dashboard-active .booking-admin-filters,
+  body.admin-dashboard-active .student-request-filters{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  body.admin-dashboard-active .booking-filter-search,
+  body.admin-dashboard-active .student-request-search-field{
+    grid-column:span 2;
+  }
+  body.admin-dashboard-active .booking-filter-reset,
+  body.admin-dashboard-active .student-request-reset{
+    align-self:end;
+  }
+  body.admin-dashboard-active .booking-request-meta{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+
+@media(max-width:760px){
+  body.admin-dashboard-active .booking-admin-head,
+  body.admin-dashboard-active .student-request-headline,
+  body.admin-dashboard-active .absence-warning-head{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) auto!important;
+    align-items:start!important;
+    gap:8px!important;
+  }
+  body.admin-dashboard-active .booking-admin-head .section-desc,
+  body.admin-dashboard-active .student-request-headline .section-desc,
+  body.admin-dashboard-active .absence-warning-head .section-desc{
+    display:none;
+  }
+  body.admin-dashboard-active .booking-admin-head>.btn{
+    width:auto!important;
+    min-height:40px!important;
+    padding:7px 9px!important;
+    font-size:.7rem;
+  }
+  body.admin-dashboard-active .booking-admin-summary,
+  body.admin-dashboard-active .student-request-summary,
+  body.admin-dashboard-active .absence-warning-summary{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:6px!important;
+  }
+  body.admin-dashboard-active .booking-admin-summary article,
+  body.admin-dashboard-active .student-request-summary article,
+  body.admin-dashboard-active .absence-warning-summary article{
+    min-height:68px!important;
+    padding:8px 3px!important;
+  }
+  body.admin-dashboard-active .booking-admin-summary b,
+  body.admin-dashboard-active .student-request-summary b{
+    font-size:1.15rem;
+  }
+  body.admin-dashboard-active .booking-admin-summary small,
+  body.admin-dashboard-active .student-request-summary small{
+    font-size:.59rem;
+    line-height:1.35;
+  }
+  body.admin-dashboard-active .booking-admin-filters,
+  body.admin-dashboard-active .student-request-filters,
+  body.admin-dashboard-active .absence-warning-filters{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    align-items:end;
+    gap:8px;
+    padding:10px!important;
+  }
+  body.admin-dashboard-active .booking-filter-search,
+  body.admin-dashboard-active .student-request-search-field,
+  body.admin-dashboard-active .warning-search-field{
+    grid-column:1/-1!important;
+  }
+  body.admin-dashboard-active .booking-admin-filters input,
+  body.admin-dashboard-active .booking-admin-filters select,
+  body.admin-dashboard-active .student-request-filters input,
+  body.admin-dashboard-active .student-request-filters select,
+  body.admin-dashboard-active .absence-warning-filters input,
+  body.admin-dashboard-active .absence-warning-filters select{
+    min-height:48px!important;
+    font-size:16px!important;
+  }
+  body.admin-dashboard-active .booking-filter-reset,
+  body.admin-dashboard-active .student-request-reset,
+  body.admin-dashboard-active .warning-filter-reset{
+    width:100%;
+    min-height:48px;
+  }
+  body.admin-dashboard-active #studentRequestFilterCount{
+    grid-column:1/-1;
+    justify-self:center;
+  }
+  body.admin-dashboard-active .booking-list-shell{
+    padding:7px!important;
+  }
+  body.admin-dashboard-active .booking-request-card{
+    padding:11px;
+    gap:9px;
+  }
+  body.admin-dashboard-active .booking-request-head{
+    align-items:flex-start;
+  }
+  body.admin-dashboard-active .booking-request-badges{
+    display:grid;
+    justify-items:end;
+    flex:0 0 auto;
+  }
+  body.admin-dashboard-active .booking-request-head .student-avatar{
+    width:38px;
+    height:38px;
+    border-radius:11px;
+  }
+  body.admin-dashboard-active .booking-request-meta,
+  body.admin-dashboard-active .absence-warning-meta{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  body.admin-dashboard-active .student-transfer-contact-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  body.admin-dashboard-active .student-transfer-contact-grid>span:first-child{
+    grid-column:1/-1;
+  }
+  body.admin-dashboard-active .booking-request-meta>span,
+  body.admin-dashboard-active .student-transfer-contact-grid>span,
+  body.admin-dashboard-active .absence-warning-meta>span{
+    min-height:55px;
+    padding:7px 8px;
+  }
+  body.admin-dashboard-active .booking-request-actions,
+  body.admin-dashboard-active .absence-warning-actions,
+  body.admin-dashboard-active .student-transfer-actions{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:6px!important;
+    width:100%;
+  }
+  body.admin-dashboard-active .booking-request-actions>*,
+  body.admin-dashboard-active .absence-warning-actions>*,
+  body.admin-dashboard-active .student-transfer-actions>*{
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    margin:0!important;
+    padding-inline:5px;
+    justify-content:center;
+    text-align:center;
+    font-size:.67rem;
+  }
+  body.admin-dashboard-active .absence-warning-actions>*:last-child,
+  body.admin-dashboard-active .student-transfer-actions>*:last-child{
+    grid-column:1/-1;
+  }
+  body.admin-dashboard-active .absence-warning-card{
+    padding:10px!important;
+  }
+  body.admin-dashboard-active .absence-warning-card-head{
+    align-items:flex-start;
+  }
+  body.admin-dashboard-active .absence-warning-icon{
+    width:38px;
+    height:38px;
+    flex:0 0 auto;
+  }
+  body.admin-dashboard-active .student-transfer-request-card{
+    padding:11px!important;
+    gap:9px;
+  }
+  body.admin-dashboard-active .student-transfer-route{
+    grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+    gap:5px;
+    padding:8px;
+  }
+}
+
+@media(max-width:380px){
+  body.admin-dashboard-active .booking-request-head h3,
+  body.admin-dashboard-active .absence-warning-identity h3{
+    font-size:.86rem;
+  }
+  body.admin-dashboard-active .booking-request-meta b,
+  body.admin-dashboard-active .student-transfer-contact-grid b,
+  body.admin-dashboard-active .absence-warning-meta b{
+    font-size:.67rem;
+  }
+}

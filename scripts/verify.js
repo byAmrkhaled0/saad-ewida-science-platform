@@ -8,11 +8,11 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const requiredFiles = [
   'index.html', 'student.html', 'parent.html', 'exams.html', 'teacher-login.html',
-  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/teacher-768.webp', 'assets/firebase-lazy.js',
+  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/firebase-lazy.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
-  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
+  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
 
 const failures = [];
@@ -29,7 +29,7 @@ const jsFiles = [
   'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
-  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
+  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
 for (const relative of jsFiles) {
@@ -81,6 +81,18 @@ for (const htmlFile of htmlFiles) {
   }
 }
 if (!failures.some(x => x.startsWith('Duplicate IDs') || x.startsWith('Broken local reference'))) ok('HTML IDs and local references passed');
+
+const routeSourceFiles = [
+  'assets/app.js', 'assets/admin.js', 'assets/online.js', 'assets/v53-upgrades.js',
+  'assets/v56-fixes.js', 'assets/firebase-sync.js', 'service-worker.js', 'local-server.js'
+];
+for (const relative of routeSourceFiles) {
+  const source = read(relative);
+  for (const match of source.matchAll(/(["'`])\/?([a-z0-9][a-z0-9-]*\.html)(?:[?#][^"'`]*)?\1/gi)) {
+    if (!fs.existsSync(path.join(root, match[2]))) fail(`Broken application route in ${relative}: ${match[2]}`);
+  }
+}
+if (!failures.some(x => x.startsWith('Broken application route'))) ok('Application page routes passed');
 
 const mobileDesignSource = read('assets/v64-mobile.css');
 for (const feature of [
@@ -277,11 +289,26 @@ if (read('teacher-login.html').includes('assets/vendor/xlsx-0.18.5.full.min.js')
 if (/unpkg\.com\/html5-qrcode|cdn\.jsdelivr\.net\/npm\/xlsx/.test([read('student.html'),read('parent.html'),read('teacher-login.html')].join('\n'))) fail('Tracking-sensitive QR or Excel CDN dependency is still present');
 if (!fs.existsSync(path.join(root,'assets/vendor/html5-qrcode-2.3.8.min.js')) || !fs.existsSync(path.join(root,'assets/vendor/xlsx-0.18.5.full.min.js'))) fail('Vendored QR or Excel file is missing');
 if (!adminSourceCode.includes("toggleAttribute('inert',shouldHide)") || !adminSourceCode.includes('adminDrawerReturnFocus')) fail('Mobile admin drawer focus isolation is incomplete');
+for (const feature of ['bookingGroupAdmin','bookingModeAdmin','bookingPaymentAdmin','bookingVisibleCount','booking-request-meta']) {
+  if (!adminSourceCode.includes(feature)) fail(`Responsive booking administration is missing: ${feature}`);
+}
+for (const feature of ['warningSearchFilter','warningGradeFilter','warningGroupFilter','warningCountFilter','warningPhoneFilter','absence-warning-meta']) {
+  if (!adminSourceCode.includes(feature) && !read('assets/v61.css').includes(feature)) fail(`Absence warning filtering is missing: ${feature}`);
+}
+for (const feature of ['studentRequestSearch','studentRequestGrade','studentRequestGroup','studentRequestStatus','student-transfer-contact-grid']) {
+  if (!adminSourceCode.includes(feature) && !read('assets/v61.css').includes(feature)) fail(`Student request filtering is missing: ${feature}`);
+}
+if (!appSourceCode.includes('studentTransferRequests:Array.isArray(p.studentTransferRequests)?p.studentTransferRequests:[]')) fail('Student transfer requests are lost while merging Firestore data');
+if (!functionsSourceCode.includes('studentPhone: digits(found.data.studentPhone)') || !functionsSourceCode.includes('parentPhone: digits(found.data.parentPhone)')) fail('Student transfer requests do not retain searchable contact numbers');
+if (!read('assets/v61.css').includes('V69.1 — clean responsive booking') || !read('assets/v61.css').includes('grid-template-columns:repeat(2,minmax(0,1fr))!important')) fail('Booking, warning, or student-request mobile layout is incomplete');
 if (!appSourceCode.includes('printParentReport') || !read('assets/v56.css').includes('printing-parent-report')) fail('Parent PDF print isolation fix is missing');
 if (!appSourceCode.includes('recitationPct') || !functionsSource.includes('recitationPct')) fail('Recitation/homework ranking linkage is missing');
 if (!read('assets/firebase-sync.js').includes('recordClassProgressDirect') || !adminSourceCode.includes('classProgressActionPending')) fail('Resilient class progress saving is missing');
 if (!read('assets/firebase-sync.js').includes('deleteStudentSafelyDirect') || !adminSourceCode.includes('studentDeletionPending')) fail('Safe direct student deletion fallback is missing');
 if (!appSourceCode.includes('formatTime12') || !adminSourceCode.includes('formatTime12')) fail('12-hour display formatting is missing');
+for (const obsolete of ['assets/critical-home.css','assets/teacher-768.webp']) {
+  if (fs.existsSync(path.join(root,obsolete))) fail(`Unused deploy asset remains: ${obsolete}`);
+}
 if (!failures.some(x => x.includes('admin loading') || x.includes('staff browser cache') || x.includes('student rendering'))) ok('Admin performance safeguards passed');
 
 const rules = read('firestore.rules');
@@ -365,7 +392,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '69.0.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.0.0'") || !read('service-worker.js').includes('mf-science-v6900-scheduling-warnings') || [...functionsSource.matchAll(/'platform-release': '69-0-0'/g)].length !== 2) fail('V69.0.0 version and cache identifiers are not unified');
+if (packageInfo.version !== '69.1.1' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.1.1'") || !read('service-worker.js').includes('mf-science-v6911-academic-linking-audit') || [...functionsSource.matchAll(/'platform-release': '69-1-1'/g)].length !== 2) fail('V69.1.1 version and cache identifiers are not unified');
 if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
 if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
 if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');
@@ -399,6 +426,9 @@ if (!functionsSourceCode.includes("require('./lib/assignment-schedule')") || !fu
 if (!firebaseSyncSourceCode.includes('assignmentIsReleased(item)') || !appSourceCode.includes('assignmentIsReleasedClient(item)')) fail('Scheduled homework client fallbacks can expose future assignments');
 if (!appSourceCode.includes('scheduleAssignmentReleaseRefresh') || !appSourceCode.includes('st.nextAssignmentPublishAt')) fail('An already-open student portal will not refresh when the next scheduled homework is released');
 if (!adminSourceCode.includes('renderWarnings') || !adminSourceCode.includes('consecutiveAbsenceWarning') || !adminSourceCode.includes('sendAbsenceWarningWhatsApp') || !adminSourceCode.includes("warnings:'attendance'")) fail('Consecutive-absence warning section or WhatsApp action is incomplete');
+if (!adminSourceCode.includes('function academicStudent(') || !adminSourceCode.includes('function adminGradeCatalog(') || !adminSourceCode.includes('function adminGroupCatalog(') || !adminSourceCode.includes('function studentRequestRecord(')) fail('Academic grade/group fallback linking is incomplete');
+if (!adminSourceCode.includes('data-request-current-group=') || !adminSourceCode.includes('data-request-target-group=') || !adminSourceCode.includes("adminGroupCatalog(grade,rows)")) fail('Student request current/target group filters are incomplete');
+if (!adminSourceCode.includes("map(academicStudent).filter(student=>student.active!==false)") || !adminSourceCode.includes('adminGroupCatalog(grade,allRows)')) fail('Absence warnings do not inherit academic data or the Firebase group catalog');
 if (!read('assets/v61.css').includes('.absence-warning-card') || !read('assets/v61.css').includes('.assignment-schedule-help')) fail('Scheduled homework or absence-warning responsive styles are missing');
 if (!adminSourceCode.includes('handleContinuousQrScan') || !adminSourceCode.includes('keepScannerOpen:true') || !read('assets/site.css').includes('.continuous-qr-status')) fail('Continuous teacher attendance scanning is incomplete');
 if (!appSourceCode.includes("document.getElementById('bookingTerm')") || !appSourceCode.includes('activeSchedulesForGrade(grade,deliveryMode,term)') || !adminSourceCode.includes('name="term" required')) fail('Booking term and schedule targeting are incomplete');
