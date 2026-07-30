@@ -133,6 +133,32 @@ body.admin-dashboard-active .attendance-roster-card .profile-top .section-desc{f
 }
 @media(max-width:430px){.compact-student-state .badge{padding:4px 6px!important;font-size:.58rem!important}}
 
+/* V69 — scheduled homework publishing and consecutive-absence warnings. */
+.assignment-schedule-help{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;padding:14px 16px;border-color:color-mix(in srgb,var(--primary) 30%,var(--border));background:color-mix(in srgb,var(--primary) 6%,var(--card))}
+.assignment-schedule-help>[data-icon]{flex:0 0 auto;width:40px;height:40px;padding:9px;border-radius:12px;background:var(--primary);color:#fff}
+.assignment-schedule-help b{display:block;margin-bottom:3px}.assignment-schedule-help p{margin:0;color:var(--muted);font-size:.76rem;font-weight:750;line-height:1.6}
+.assignment-publish-field small{display:block;margin-top:5px;color:var(--muted);font-size:.68rem;line-height:1.5}
+.assignment-publish-label{color:var(--primary)!important;font-weight:900!important}
+.assignment-manager-row.assignment-scheduled{border-inline-start:4px solid #7b61d1!important}
+.badge.scheduled{background:color-mix(in srgb,#7b61d1 14%,var(--card))!important;color:#6a4fc3!important;border-color:color-mix(in srgb,#7b61d1 35%,var(--border))!important}
+.absence-warning-head{border-color:color-mix(in srgb,var(--red) 24%,var(--border))!important}
+.absence-warning-total{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,var(--red) 11%,var(--card));border:1px solid color-mix(in srgb,var(--red) 25%,var(--border));color:var(--red);font-size:.76rem;font-weight:950;white-space:nowrap}
+.absence-warning-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.absence-warning-summary article{display:grid;place-items:center;min-height:86px;padding:12px;text-align:center}
+.absence-warning-summary b{font-size:1.55rem;color:var(--red);line-height:1}.absence-warning-summary small{margin-top:7px;color:var(--muted);font-size:.7rem;font-weight:850}
+.absence-warning-list{display:grid;gap:9px}
+.absence-warning-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 15px;border-inline-start:4px solid var(--red)}
+.absence-warning-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:color-mix(in srgb,var(--red) 12%,var(--card));color:var(--red)}
+.absence-warning-icon>[data-icon]{width:22px;height:22px}
+.absence-warning-copy{min-width:0}.absence-warning-copy>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.absence-warning-copy h3{margin:0;font-size:.98rem}.absence-warning-copy p{margin:4px 0;color:var(--muted);font-size:.75rem;font-weight:800}.absence-warning-copy small{display:block;margin-top:2px;color:var(--muted);font-size:.68rem;font-weight:750}
+.absence-warning-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}.absence-warning-actions .small-btn{margin:0}
+.absence-warning-empty{padding:34px;text-align:center}.absence-warning-empty>[data-icon]{width:46px;height:46px;margin:auto;color:var(--green)}.absence-warning-empty h3{margin:10px 0 4px}.absence-warning-empty p{margin:0;color:var(--muted)}
+@media(max-width:760px){
+  .assignment-schedule-help{padding:11px}.assignment-schedule-help>[data-icon]{width:36px;height:36px}
+  .absence-warning-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.absence-warning-summary article{min-height:70px;padding:8px 3px}.absence-warning-summary b{font-size:1.15rem}.absence-warning-summary small{font-size:.6rem;line-height:1.35}
+  .absence-warning-card{grid-template-columns:auto minmax(0,1fr);padding:11px;gap:9px}.absence-warning-icon{width:38px;height:38px}.absence-warning-actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}.absence-warning-actions .small-btn{width:100%;padding-inline:4px;font-size:.66rem}
+}
+
 /* v62.7 — clear student directory, count above filters, one responsive row system */
 .student-section-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .student-total-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid color-mix(in srgb,var(--primary) 25%,var(--border));border-radius:999px;background:color-mix(in srgb,var(--primary) 7%,var(--card));color:var(--muted);font-size:.7rem;font-weight:900;white-space:nowrap}

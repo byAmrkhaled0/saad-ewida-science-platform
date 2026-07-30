@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '68.5.5';
+const release = '69.0.0';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -136,7 +136,9 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   }
   const publicBundleTag = `<script defer src="assets/platform.js?v=${release}"></script>`;
   const adminBundleTag = `<script defer src="assets/admin-platform.js?v=${release}"></script>`;
-  let publicSeen = false, adminSeen = false;
+  const cssBundlePattern = /<link rel="stylesheet" href="assets\/platform\.css\?v=[^"]+">\s*/g;
+  let cssSeen = false, publicSeen = false, adminSeen = false;
+  html = html.replace(cssBundlePattern, match => cssSeen ? '' : (cssSeen = true, match));
   html = html.replace(new RegExp(publicBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => publicSeen ? '' : (publicSeen = true, match));
   html = html.replace(new RegExp(adminBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => adminSeen ? '' : (adminSeen = true, match));
   if (file === 'index.html') {
@@ -171,6 +173,8 @@ for (const file of builtPages) {
   }
   const publicBundles = (html.match(/assets\/platform\.js/g) || []).length;
   const adminBundles = (html.match(/assets\/admin-platform\.js/g) || []).length;
+  const cssBundles = (html.match(/assets\/platform\.css/g) || []).length;
+  if (cssBundles !== 1) buildReferenceErrors.push(`${file}: invalid stylesheet bundle count`);
   if (file === 'teacher-login.html') {
     if (publicBundles !== 0 || adminBundles !== 1) buildReferenceErrors.push(`${file}: invalid admin bundle count`);
   } else if (publicBundles !== 1 || adminBundles !== 0) {

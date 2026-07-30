@@ -17,7 +17,8 @@ const Timestamp = admin.firestore.Timestamp;
 const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
 const { normalizeStudentName, studentNameIdentity, hasAtLeastThreeNameParts } = require('./lib/student-name');
-const BACKEND_RELEASE = '68.5.5';
+const { scheduledTimeMillis, assignmentIsReleased } = require('./lib/assignment-schedule');
+const BACKEND_RELEASE = '69.0.0';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -27,7 +28,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '68-5-5' }
+  labels: { 'platform-release': '69-0-0' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -35,7 +36,7 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '68-5-5' }
+  labels: { 'platform-release': '69-0-0' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
@@ -549,7 +550,9 @@ async function getPortalStudentHandler(request) {
     loadOnlineContentForStudent(found.data, studentCode).catch(error => { console.warn('portal-online-content-unavailable', error?.message || error); return []; })
   ]);
   const studentMode = found.data.deliveryMode === 'online' ? 'online' : 'center';
-  const assignments = assignmentSnap ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===found.data.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===studentMode)&&(!item.group||item.group==='كل المجموعات'||item.group===found.data.group)).slice(-100) : [];
+  const targetedAssignments = assignmentSnap ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===found.data.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===studentMode)&&(!item.group||item.group==='كل المجموعات'||item.group===found.data.group)) : [];
+  const assignments = targetedAssignments.filter(item=>assignmentIsReleased(item)).slice(-100);
+  const nextAssignmentMillis = targetedAssignments.map(item=>scheduledTimeMillis(item.publishAt)).filter(value=>value>Date.now()).sort((a,b)=>a-b)[0]||0;
   const monthKey = cairoDateKey(new Date()).slice(0, 7);
   const grade = text(found.data.grade, 50);
   const monthlyIncentive = monthlyRows.find(row => row.studentCode === normalizeCode(studentCode)) || {
@@ -557,7 +560,7 @@ async function getPortalStudentHandler(request) {
     attendancePct: 0, gradePct: 0, homeworkPct: 0, recitationPct: 0, activity: 0,
     participants: monthlyRows.filter(row => row.grade === grade).length
   };
-  return { ...portalResponse(found.data, attempts, records), assignments, onlineContent, monthlyIncentive };
+  return { ...portalResponse(found.data, attempts, records), assignments, nextAssignmentPublishAt:nextAssignmentMillis?new Date(nextAssignmentMillis).toISOString():'', onlineContent, monthlyIncentive };
 }
 
 exports.getPortalStudent = onCall(CALLABLE_OPTIONS, getPortalStudentHandler);
@@ -1673,7 +1676,7 @@ exports.prepareHomeworkUpload = onCall(CALLABLE_OPTIONS, async request => {
   let assignmentTitle = '';
   if (assignmentId) {
     const assignmentSnap = await db.collection('assignments').doc(cleanDocId(assignmentId)).get();
-    if (!assignmentSnap.exists || assignmentSnap.data().active === false) throw new HttpsError('not-found', 'الواجب غير متاح حاليًا.');
+    if (!assignmentSnap.exists || !assignmentIsReleased(assignmentSnap.data())) throw new HttpsError('not-found', 'الواجب غير متاح حاليًا أو لم يحن موعد نشره بعد.');
     const assignment = assignmentSnap.data() || {};
     const mode = found.data.deliveryMode === 'online' ? 'online' : 'center';
     const matches = (!assignment.grade || assignment.grade === 'كل الصفوف' || assignment.grade === found.data.grade)

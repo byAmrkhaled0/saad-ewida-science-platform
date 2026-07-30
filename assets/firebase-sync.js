@@ -25,6 +25,8 @@
   const nowIso=()=>new Date().toISOString();
   const dateKey=value=>{if(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value))return value;const date=value?new Date(value):new Date();if(Number.isNaN(date.getTime()))return nowIso().slice(0,10);const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date).reduce((out,part)=>(out[part.type]=part.value,out),{});return `${parts.year}-${parts.month}-${parts.day}`;};
   const monthKey=value=>dateKey(value).slice(0,7);
+  const scheduledTimeMillis=value=>{if(!value)return 0;if(typeof value.toMillis==='function'){const millis=Number(value.toMillis());return Number.isFinite(millis)?millis:0;}const millis=Date.parse(String(value));return Number.isFinite(millis)?millis:0;};
+  const assignmentIsReleased=item=>item?.active!==false&&(!scheduledTimeMillis(item?.publishAt)||scheduledTimeMillis(item.publishAt)<=Date.now());
 
   try{
     const app=firebase.apps&&firebase.apps.length?firebase.app():firebase.initializeApp(cfg);
@@ -274,8 +276,10 @@
       if(options.full===true)await markLeaderboardDirty('full-sync');
     }
 
-    async function getDocs(collection,limit){
-      const ref=limit?db.collection(collection).limit(limit):db.collection(collection);
+    async function getDocs(collection,limit,options={}){
+      let ref=db.collection(collection);
+      if(options.orderBy)ref=ref.orderBy(options.orderBy,options.direction==='desc'?'desc':'asc');
+      if(limit)ref=ref.limit(limit);
       const snap=await ref.get();return snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id}));
     }
     async function getSettings(){const snap=await platformSettingsDoc.get().catch(()=>null);return snap?.exists?snap.data():{};}
@@ -319,7 +323,7 @@
 
     async function loadStaffRecordCollections(){
       const [attempts,grades,attendance,recitations,homeworks]=await Promise.all([
-        getDocs('exam_attempts',3000).catch(()=>[]),getDocs('grades',5000).catch(()=>[]),getDocs('attendance',5000).catch(()=>[]),
+        getDocs('exam_attempts',3000).catch(()=>[]),getDocs('grades',5000).catch(()=>[]),getDocs('attendance',5000,{orderBy:'date',direction:'desc'}).catch(()=>[]),
         getDocs('recitations',3000).catch(()=>[]),getDocs('homework_submissions',3000).catch(()=>[])
       ]);
       attendance.forEach(item=>seedFingerprint('attendance',cleanDocId(item.id),item));
@@ -342,7 +346,7 @@
       student.paymentHistory=paymentRecords.sort((a,b)=>String(b.monthKey||'').localeCompare(String(a.monthKey||'')));
       const mergedGrades=new Map();attempts.filter(row=>row.score!==null&&row.score!==undefined&&row.score!=='').forEach(row=>mergedGrades.set(String(row.attemptId||row.id),{...row,exam:row.exam||row.examTitle||'امتحان',date:row.date||String(row.submittedAt||'').slice(0,10)}));grades.forEach(row=>mergedGrades.set(String(row.attemptId||row.id),row));
       student.attendance=attendance;student.grades=[...mergedGrades.values()];student.homeworks=homeworks;student.recitations=recitations;student.examAttempts=attempts;
-      student.assignments=assignments.filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===student.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===student.deliveryMode)&&(!item.group||item.group==='كل المجموعات'||item.group===student.group)).slice(-100);
+      student.assignments=assignments.filter(item=>assignmentIsReleased(item)&&(!item.grade||item.grade==='كل الصفوف'||item.grade===student.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===student.deliveryMode)&&(!item.group||item.group==='كل المجموعات'||item.group===student.group)).slice(-100);
       return student;
     }
 

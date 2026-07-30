@@ -14,8 +14,7 @@
   "dependencies": {
     "firebase-admin": "13.10.0",
     "firebase-functions": "7.2.5",
-    "qrcode": "1.5.4",
-    "saad-ewida-science-platform": "file:.."
+    "qrcode": "1.5.4"
   },
   "overrides": {
     "uuid": "^11.1.1"

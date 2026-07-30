@@ -15,13 +15,13 @@ function Invoke-Checked {
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
-Write-Host "1/7 Verifying project..." -ForegroundColor Cyan
+Write-Host "1/8 Verifying project..." -ForegroundColor Cyan
 Invoke-Checked -Label "npm test" -Action { npm test }
 
-Write-Host "2/7 Building static site..." -ForegroundColor Cyan
+Write-Host "2/8 Building static site..." -ForegroundColor Cyan
 Invoke-Checked -Label "npm run build" -Action { npm run build }
 
-Write-Host "3/7 Installing Firebase Functions dependencies..." -ForegroundColor Cyan
+Write-Host "3/8 Installing Firebase Functions dependencies..." -ForegroundColor Cyan
 Invoke-Checked -Label "npm config set registry" -Action { npm config set registry https://registry.npmjs.org/ }
 Invoke-Checked -Label "npm --prefix functions ci" -Action { npm --prefix functions ci --no-audit --no-fund }
 Invoke-Checked -Label "npm --prefix functions ls" -Action { npm --prefix functions ls firebase-functions firebase-admin }
@@ -30,7 +30,8 @@ Write-Host "4/8 Deploying Firebase Functions in safe groups..." -ForegroundColor
 $FunctionGroups = @(
   "functions:platformApi,functions:getPortalStudent,functions:createBooking,functions:approveBooking,functions:rejectBooking,functions:getBookingStatus,functions:getPublicLeaderboard,functions:getPublicResources,functions:getOnlineContentForStudent,functions:createStudentAccess",
   "functions:createReview,functions:registerTeacherPushToken,functions:createAttendanceSession,functions:claimAttendanceSession,functions:recordLectureProgress,functions:recordClassProgress,functions:getExamDashboard,functions:startExam,functions:submitExam,functions:prepareHomeworkUpload",
-  "functions:registerHomeworkSubmission,functions:reportClientError,functions:createBackupNow,functions:listAutomaticBackups,functions:getBackupDownloadUrl,functions:restoreAutomaticBackup,functions:deleteStudentSafely,functions:scheduledPlatformBackup,functions:notifyStaffOnBookingCreated"
+  "functions:registerHomeworkSubmission,functions:reportClientError,functions:createBackupNow,functions:listAutomaticBackups,functions:getBackupDownloadUrl,functions:restoreAutomaticBackup,functions:deleteStudentSafely,functions:scheduledPlatformBackup,functions:notifyStaffOnBookingCreated",
+  "functions:listStaffAccounts,functions:upsertStaffAccount,functions:setStaffAccountState,functions:uploadBookingReceipt,functions:reviewBookingReceipt"
 )
 foreach ($Group in $FunctionGroups) {
   Invoke-Checked -Label "firebase deploy $Group" -Action { npx --yes firebase-tools@latest deploy --project saad-ewida-science-platform --only $Group }
@@ -53,7 +54,7 @@ Write-Host "8/8 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked -Label "git add" -Action { git add -A }
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked -Label "git commit" -Action { git commit -m "Fix Cloud Functions CORS and booking approval V63.3.6" }
+  Invoke-Checked -Label "git commit" -Action { git commit -m "Add homework scheduling and absence warnings V69.0.0" }
   Invoke-Checked -Label "git push" -Action { git push origin main }
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow

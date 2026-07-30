@@ -12,7 +12,7 @@ const requiredFiles = [
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
-  'functions/index.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
+  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
 
 const failures = [];
@@ -29,7 +29,7 @@ const jsFiles = [
   'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
-  'functions/index.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
+  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
 for (const relative of jsFiles) {
@@ -223,6 +223,11 @@ const callableNames = [
 for (const name of callableNames) {
   if (!functionsSource.includes(`exports.${name} = onCall`)) fail(`Missing callable function export: ${name}`);
 }
+const productionDeploySource = read('deploy-production.ps1');
+const deployableFunctionNames = [...functionsSource.matchAll(/exports\.(\w+)\s*=\s*(?:onCall|onRequest|onSchedule|onDocumentCreated)/g)].map(match => match[1]);
+for (const name of deployableFunctionNames) {
+  if (!productionDeploySource.includes(`functions:${name}`)) fail(`Production deployment script omits Firebase function: ${name}`);
+}
 const firebaseSyncSource = read('assets/firebase-sync.js');
 const callableBindings = [...firebaseSyncSource.matchAll(/\w+\s*:\s*callable\('([^']+)'\)/g)].map(match => match[1]);
 for (const name of callableBindings) {
@@ -307,7 +312,7 @@ if (appSourceCode.includes('/functions\\\\/not-found|function.*unavailable/') ||
 if (!read('index.html').includes('<script defer src="https://www.gstatic.com/firebasejs/')) fail('Firebase scripts are not downloaded in parallel with deferred execution');
 if (!read('index.html').includes('<b>9</b><small>صفوف دراسية</small>') || !read('index.html').includes('<source media="(max-width: 900px)" srcset="assets/teacher-480.webp">')) fail('Home grade count or responsive LCP image is incomplete');
 if (/class="floating-card/.test(read('index.html')) || /متابعة مستمرة<\/div>/.test(read('index.html'))) fail('Decorative teacher-image cards can overlap the portrait');
-if (!read('scripts/build.js').includes('assets/firebase-lazy.js') || !read('scripts/build.js').includes("file === 'index.html'") || !read('scripts/build.js').includes('hreflang="x-default"')) fail('Landing-page performance or SEO build metadata is incomplete');
+if (!read('scripts/build.js').includes('assets/firebase-lazy.js') || !read('scripts/build.js').includes("file === 'index.html'") || !read('scripts/build.js').includes('hreflang="x-default"') || !read('scripts/build.js').includes('invalid stylesheet bundle count')) fail('Landing-page performance, stylesheet deduplication, or SEO build metadata is incomplete');
 if (!read('vercel.json').includes('max-age=31536000, immutable') || !read('vercel.json').includes('max-age=0, must-revalidate')) fail('Production browser cache headers are incomplete');
 if (!read('scripts/build.js').includes("'@type':'WebPage'") || !read('scripts/build.js').includes("'@type':'EducationalOrganization'")) fail('Structured search data is incomplete');
 const upgrade = read('assets/v53-upgrades.js');
@@ -359,7 +364,7 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '68.5.5' || !read('assets/app.js').includes("MF_ASSET_VERSION = '68.5.5'") || !read('service-worker.js').includes('mf-science-v6855-qr-gallery') || [...functionsSource.matchAll(/'platform-release': '68-5-5'/g)].length !== 2) fail('V68.5.5 version and cache identifiers are not unified');
+if (packageInfo.version !== '69.0.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.0.0'") || !read('service-worker.js').includes('mf-science-v6900-scheduling-warnings') || [...functionsSource.matchAll(/'platform-release': '69-0-0'/g)].length !== 2) fail('V69.0.0 version and cache identifiers are not unified');
 if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
 if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
 if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');
@@ -388,6 +393,12 @@ if (!functionsSource.includes("brand: 'saad-ewida'") || !functionsSource.include
 if (!functionsSource.includes('assignmentId') || !appSourceCode.includes('homework-assignment-picker')) fail('Assignment-specific homework submissions are incomplete');
 if (!adminSourceCode.includes('assignmentQuestionsV68') || !adminSourceCode.includes('values.questions=questions') || !adminSourceCode.includes('application/pdf,image/jpeg,image/png,image/webp')) fail('Written-question and PDF assignment creation is incomplete');
 if (!appSourceCode.includes('portalAssignmentQuestions') || !appSourceCode.includes('student-assignment-questions') || !read('assets/site.css').includes('.assignment-editor-v68')) fail('Student assignment questions or mobile assignment layout is incomplete');
+if (!adminSourceCode.includes('name="publishAt" type="datetime-local"') || !adminSourceCode.includes('assignmentPublishStateAdmin') || !adminSourceCode.includes('تم حفظ وجدولة الواجب')) fail('Scheduled homework authoring or status display is incomplete');
+if (!functionsSourceCode.includes("require('./lib/assignment-schedule')") || !functionsSourceCode.includes('assignmentIsReleased(item)') || !functionsSourceCode.includes('assignmentIsReleased(assignmentSnap.data())') || !functionsSourceCode.includes('nextAssignmentPublishAt')) fail('Scheduled homework is not protected by the student portal and upload backend');
+if (!firebaseSyncSourceCode.includes('assignmentIsReleased(item)') || !appSourceCode.includes('assignmentIsReleasedClient(item)')) fail('Scheduled homework client fallbacks can expose future assignments');
+if (!appSourceCode.includes('scheduleAssignmentReleaseRefresh') || !appSourceCode.includes('st.nextAssignmentPublishAt')) fail('An already-open student portal will not refresh when the next scheduled homework is released');
+if (!adminSourceCode.includes('renderWarnings') || !adminSourceCode.includes('consecutiveAbsenceWarning') || !adminSourceCode.includes('sendAbsenceWarningWhatsApp') || !adminSourceCode.includes("warnings:'attendance'")) fail('Consecutive-absence warning section or WhatsApp action is incomplete');
+if (!read('assets/v61.css').includes('.absence-warning-card') || !read('assets/v61.css').includes('.assignment-schedule-help')) fail('Scheduled homework or absence-warning responsive styles are missing');
 if (!adminSourceCode.includes('handleContinuousQrScan') || !adminSourceCode.includes('keepScannerOpen:true') || !read('assets/site.css').includes('.continuous-qr-status')) fail('Continuous teacher attendance scanning is incomplete');
 if (!appSourceCode.includes("document.getElementById('bookingTerm')") || !appSourceCode.includes('activeSchedulesForGrade(grade,deliveryMode,term)') || !adminSourceCode.includes('name="term" required')) fail('Booking term and schedule targeting are incomplete');
 if (!functionsSource.includes('schedule.term') || !functionsSource.includes('requestedTerm')) fail('Secure booking term validation is incomplete');
