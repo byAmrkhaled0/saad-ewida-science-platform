@@ -1,4 +1,8 @@
 $ErrorActionPreference = "Stop"
+# Firebase CLI normally allows only 10 seconds to discover exported functions.
+# Windows antivirus and cold npm caches can make module loading exceed that
+# even when the backend itself is healthy, so use Firebase's supported override.
+$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"
 
 function Invoke-Checked {
   param(
@@ -29,8 +33,10 @@ Invoke-Checked -Label "npm --prefix functions ls" -Action { npm --prefix functio
 Write-Host "4/8 Deploying Firebase Functions in safe groups..." -ForegroundColor Cyan
 $FunctionGroups = @(
   "functions:platformApi,functions:getPortalStudent,functions:createBooking,functions:approveBooking,functions:rejectBooking,functions:getBookingStatus,functions:getPublicLeaderboard,functions:getPublicResources,functions:getOnlineContentForStudent,functions:createStudentAccess",
+  "functions:createStudentTransferRequest",
   "functions:createReview,functions:registerTeacherPushToken,functions:createAttendanceSession,functions:claimAttendanceSession,functions:recordLectureProgress,functions:recordClassProgress,functions:getExamDashboard,functions:startExam,functions:submitExam,functions:prepareHomeworkUpload",
-  "functions:registerHomeworkSubmission,functions:reportClientError,functions:createBackupNow,functions:listAutomaticBackups,functions:getBackupDownloadUrl,functions:restoreAutomaticBackup,functions:deleteStudentSafely,functions:scheduledPlatformBackup,functions:notifyStaffOnBookingCreated",
+  "functions:registerHomeworkSubmission,functions:reportClientError,functions:createBackupNow,functions:listAutomaticBackups,functions:getBackupDownloadUrl,functions:restoreAutomaticBackup,functions:deleteStudentSafely,functions:scheduledPlatformBackup,functions:notifyStaffOnBookingCreated,functions:reviewStudentTransferRequest",
+  "functions:saveGroupSchedule,functions:deleteGroupSchedule",
   "functions:listStaffAccounts,functions:upsertStaffAccount,functions:setStaffAccountState,functions:uploadBookingReceipt,functions:reviewBookingReceipt"
 )
 foreach ($Group in $FunctionGroups) {
@@ -54,7 +60,7 @@ Write-Host "8/8 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked -Label "git add" -Action { git add -A }
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked -Label "git commit" -Action { git commit -m "Add homework scheduling and absence warnings V69.0.0" }
+  Invoke-Checked -Label "git commit" -Action { git commit -m "Add student transfer requests and strengthen schedule targeting V69.0.0" }
   Invoke-Checked -Label "git push" -Action { git push origin main }
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow

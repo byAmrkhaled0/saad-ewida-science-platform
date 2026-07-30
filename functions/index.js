@@ -17,7 +17,12 @@ const Timestamp = admin.firestore.Timestamp;
 const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
 const { normalizeStudentName, studentNameIdentity, hasAtLeastThreeNameParts } = require('./lib/student-name');
-const { scheduledTimeMillis, assignmentIsReleased } = require('./lib/assignment-schedule');
+const {
+  scheduledTimeMillis,
+  assignmentIsReleased,
+  assignmentDueDatePassed,
+  assignmentSubmissionIsOpen
+} = require('./lib/assignment-schedule');
 const BACKEND_RELEASE = '69.0.0';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
@@ -45,7 +50,8 @@ const HTTP_BRIDGE_ACTIONS = new Set([
   'recordClassProgress', 'getExamDashboard', 'startExam', 'submitExam', 'prepareHomeworkUpload',
   'registerHomeworkSubmission', 'reportClientError', 'createBackupNow', 'listAutomaticBackups',
   'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely', 'registerTeacherPushToken',
-  'listStaffAccounts', 'upsertStaffAccount', 'setStaffAccountState'
+  'listStaffAccounts', 'upsertStaffAccount', 'setStaffAccountState',
+  'createStudentTransferRequest', 'reviewStudentTransferRequest', 'saveGroupSchedule', 'deleteGroupSchedule'
   , 'uploadBookingReceipt', 'reviewBookingReceipt'
 ]);
 
@@ -449,6 +455,7 @@ function portalResponse(data, attempts, records = {}) {
     term: text(data.term, 40),
     bookingCode: text(data.bookingCode, 40),
     approvalStatus: text(data.approvalStatus || data.status, 100),
+    scheduleId: text(data.scheduleId, 100),
     scheduleDays: text(data.scheduleDays, 100),
     scheduleStartTime: text(data.scheduleStartTime, 20),
     scheduleEndTime: text(data.scheduleEndTime, 20),
@@ -465,6 +472,68 @@ function portalResponse(data, attempts, records = {}) {
     homeworks: Array.isArray(records.homeworks) ? records.homeworks.slice(-120) : (Array.isArray(data.homeworks) ? data.homeworks.slice(-120) : []),
     recitations: Array.isArray(records.recitations) ? records.recitations.slice(-120) : (Array.isArray(data.recitations) ? data.recitations.slice(-120) : []),
     examAttempts: Array.isArray(attempts) ? attempts.slice(-120) : []
+  };
+}
+
+function learningTargetMatchesStudent(item = {}, student = {}) {
+  const itemMode = item.deliveryMode === 'online' ? 'online' : (item.deliveryMode === 'center' ? 'center' : 'all');
+  const studentMode = student.deliveryMode === 'online' ? 'online' : 'center';
+  const modeOk = itemMode === 'all' || itemMode === studentMode;
+  const gradeOk = !item.grade || item.grade === 'كل الصفوف' || item.grade === student.grade;
+  const itemScheduleId = text(item.scheduleId, 100);
+  const studentScheduleId = text(student.scheduleId, 100);
+  const groupOk = itemScheduleId && studentScheduleId
+    ? itemScheduleId === studentScheduleId
+    : (!item.group || item.group === 'كل المجموعات' || item.group === student.group);
+  const yearOk = !item.academicYear || !student.academicYear || item.academicYear === student.academicYear;
+  const termOk = !item.term || !student.term || item.term === student.term;
+  return modeOk && gradeOk && groupOk && yearOk && termOk;
+}
+
+function scheduleMatchesStudent(schedule = {}, student = {}) {
+  if (schedule.active === false) return false;
+  return learningTargetMatchesStudent({
+    ...schedule,
+    group: 'كل المجموعات',
+    scheduleId: ''
+  }, student);
+}
+
+function publicSchedule(schedule = {}) {
+  return {
+    id: text(schedule.id, 100),
+    name: text(schedule.name, 100),
+    grade: text(schedule.grade, 80),
+    deliveryMode: schedule.deliveryMode === 'online' ? 'online' : 'center',
+    academicYear: text(schedule.academicYear, 20),
+    term: text(schedule.term, 40),
+    days: text(schedule.days, 100),
+    startTime: text(schedule.startTime, 20),
+    endTime: text(schedule.endTime, 20),
+    capacity: Math.max(0, Math.min(500, Number(schedule.capacity || 0)))
+  };
+}
+
+function firestoreMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return Number(value.toMillis()) || 0;
+  const millis = new Date(value).getTime();
+  return Number.isFinite(millis) ? millis : 0;
+}
+
+function publicTransferRequest(request = {}) {
+  const createdAt = firestoreMillis(request.createdAt);
+  const reviewedAt = firestoreMillis(request.reviewedAt);
+  return {
+    id: text(request.id, 120),
+    status: ['pending', 'approved', 'rejected'].includes(request.status) ? request.status : 'pending',
+    currentGroup: text(request.currentGroup, 100),
+    targetGroup: text(request.targetGroup, 100),
+    targetScheduleId: text(request.targetScheduleId, 100),
+    reason: text(request.reason, 800),
+    teacherNote: text(request.teacherNote, 800),
+    createdAt: createdAt ? new Date(createdAt).toISOString() : '',
+    reviewedAt: reviewedAt ? new Date(reviewedAt).toISOString() : ''
   };
 }
 
@@ -542,17 +611,35 @@ async function getPortalStudentHandler(request) {
   await rateLimitPublic(`portal-${mode}`, code, request, 8, 35, 60 * 1000);
   const found = mode === 'parent' ? await getParentPortalByCode(code) : await getStudentPortalByCode(code);
   const studentCode = found.data.studentCode || found.data.code;
-  const [attempts, records, assignmentSnap, monthlyRows, onlineContent] = await Promise.all([
+  const [attempts, records, assignmentSnap, monthlyRows, onlineContent, groupSnap, transferSnap] = await Promise.all([
     attemptSummaries(studentCode).catch(error => { console.warn('portal-attempts-unavailable', error?.message || error); return []; }),
     studentRecords(studentCode).catch(error => { console.warn('portal-records-unavailable', error?.message || error); return { attendance: [], grades: [], homeworks: [], recitations: [], payments: [] }; }),
     db.collection('assignments').limit(300).get().catch(()=>null),
     getMonthlyLeaderboardRows().catch(error => { console.warn('portal-incentive-unavailable', error?.message || error); return []; }),
-    loadOnlineContentForStudent(found.data, studentCode).catch(error => { console.warn('portal-online-content-unavailable', error?.message || error); return []; })
+    loadOnlineContentForStudent(found.data, studentCode).catch(error => { console.warn('portal-online-content-unavailable', error?.message || error); return []; }),
+    db.collection('groups').limit(300).get().catch(()=>null),
+    db.collection('student_transfer_requests').where('studentCode', '==', normalizeCode(studentCode)).limit(20).get().catch(()=>null)
   ]);
-  const studentMode = found.data.deliveryMode === 'online' ? 'online' : 'center';
-  const targetedAssignments = assignmentSnap ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&(!item.grade||item.grade==='كل الصفوف'||item.grade===found.data.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===studentMode)&&(!item.group||item.group==='كل المجموعات'||item.group===found.data.group)) : [];
-  const assignments = targetedAssignments.filter(item=>assignmentIsReleased(item)).slice(-100);
+  const targetedAssignments = assignmentSnap
+    ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&learningTargetMatchesStudent(item,found.data))
+    : [];
+  const todayKey = cairoDateKey(new Date());
+  const assignments = targetedAssignments.filter(item=>assignmentIsReleased(item)).slice(-100).map(item=>({
+    ...item,
+    submissionClosed: assignmentDueDatePassed(item, todayKey)
+  }));
   const nextAssignmentMillis = targetedAssignments.map(item=>scheduledTimeMillis(item.publishAt)).filter(value=>value>Date.now()).sort((a,b)=>a-b)[0]||0;
+  const transferOptions = groupSnap
+    ? groupSnap.docs.map(doc=>({id:doc.id,...doc.data()}))
+      .filter(item=>scheduleMatchesStudent(item,found.data))
+      .filter(item=>text(found.data.scheduleId,100)?item.id!==text(found.data.scheduleId,100):item.name!==found.data.group)
+      .map(publicSchedule)
+      .sort((a,b)=>`${a.days} ${a.startTime} ${a.name}`.localeCompare(`${b.days} ${b.startTime} ${b.name}`,'ar'))
+    : [];
+  const transferRequests = transferSnap
+    ? transferSnap.docs.map(doc=>({id:doc.id,...doc.data()})).sort((a,b)=>firestoreMillis(b.createdAt)-firestoreMillis(a.createdAt))
+    : [];
+  const transferRequest = transferRequests.length ? publicTransferRequest(transferRequests[0]) : null;
   const monthKey = cairoDateKey(new Date()).slice(0, 7);
   const grade = text(found.data.grade, 50);
   const monthlyIncentive = monthlyRows.find(row => row.studentCode === normalizeCode(studentCode)) || {
@@ -560,10 +647,342 @@ async function getPortalStudentHandler(request) {
     attendancePct: 0, gradePct: 0, homeworkPct: 0, recitationPct: 0, activity: 0,
     participants: monthlyRows.filter(row => row.grade === grade).length
   };
-  return { ...portalResponse(found.data, attempts, records), assignments, nextAssignmentPublishAt:nextAssignmentMillis?new Date(nextAssignmentMillis).toISOString():'', onlineContent, monthlyIncentive };
+  return {
+    ...portalResponse(found.data, attempts, records),
+    assignments,
+    nextAssignmentPublishAt:nextAssignmentMillis?new Date(nextAssignmentMillis).toISOString():'',
+    onlineContent,
+    monthlyIncentive,
+    transferOptions,
+    transferRequest
+  };
 }
 
 exports.getPortalStudent = onCall(CALLABLE_OPTIONS, getPortalStudentHandler);
+
+async function scheduleEnrollment(schedule, scheduleId, excludeStudentCode = '') {
+  const groupName = text(schedule.name, 100);
+  if (!groupName) return [];
+  const snap = await db.collection('students').where('group', '==', groupName).limit(1000).get();
+  const mode = schedule.deliveryMode === 'online' ? 'online' : 'center';
+  return snap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(student=>{
+    const studentMode = student.deliveryMode === 'online' ? 'online' : 'center';
+    return student.active !== false
+      && normalizeCode(student.studentCode || student.id) !== normalizeCode(excludeStudentCode)
+      && student.grade === schedule.grade
+      && studentMode === mode
+      && (!schedule.term || !student.term || schedule.term === student.term)
+      && (!schedule.academicYear || !student.academicYear || schedule.academicYear === student.academicYear)
+      && (!student.scheduleId || text(student.scheduleId,100) === scheduleId);
+  });
+}
+
+exports.createStudentTransferRequest = onCall(CALLABLE_OPTIONS, async request => {
+  const body = request.data || {};
+  const studentCode = normalizeCode(body.studentCode);
+  await rateLimitPublic('student-transfer', studentCode, request, 3, 8, 60 * 60 * 1000);
+  const found = await getStudentPortalByCode(studentCode);
+  const targetScheduleId = cleanDocId(text(body.targetScheduleId, 100));
+  const reason = text(body.reason, 800);
+  if (!targetScheduleId) throw new HttpsError('invalid-argument', 'اختر المجموعة المطلوب النقل إليها.');
+  if (reason.length < 3) throw new HttpsError('invalid-argument', 'اكتب سبب طلب النقل باختصار.');
+  const [targetSnap, existingSnap] = await Promise.all([
+    db.collection('groups').doc(targetScheduleId).get(),
+    db.collection('student_transfer_requests').where('studentCode', '==', studentCode).limit(20).get()
+  ]);
+  if (!targetSnap.exists || targetSnap.data().active === false) throw new HttpsError('not-found', 'المجموعة المطلوبة لم تعد متاحة.');
+  const target = { id:targetSnap.id, ...targetSnap.data() };
+  if (!scheduleMatchesStudent(target, found.data)) throw new HttpsError('permission-denied', 'هذه المجموعة ليست مخصصة لصف الطالب أو نوع دراسته أو الترم الحالي.');
+  if ((found.data.scheduleId && target.id === found.data.scheduleId) || (!found.data.scheduleId && target.name === found.data.group)) {
+    throw new HttpsError('already-exists', 'الطالب موجود بالفعل في هذه المجموعة.');
+  }
+  if (existingSnap.docs.some(doc=>doc.data().status === 'pending')) {
+    throw new HttpsError('already-exists', 'يوجد طلب نقل قيد المراجعة بالفعل.');
+  }
+  const capacity = Math.max(0, Math.min(500, Number(target.capacity || 0)));
+  if (capacity) {
+    const enrolled = await scheduleEnrollment(target, target.id, studentCode);
+    if (enrolled.length >= capacity) throw new HttpsError('resource-exhausted', 'اكتمل عدد الطلاب في هذه المجموعة. اختر مجموعة أخرى.');
+  }
+  const ref = db.collection('student_transfer_requests').doc();
+  const payload = {
+    id: ref.id,
+    studentCode,
+    studentName: text(found.data.studentName || found.data.name, 100),
+    grade: text(found.data.grade, 80),
+    deliveryMode: found.data.deliveryMode === 'online' ? 'online' : 'center',
+    academicYear: text(found.data.academicYear, 20),
+    term: text(found.data.term, 40),
+    currentGroup: text(found.data.group, 100),
+    currentScheduleId: text(found.data.scheduleId, 100),
+    targetGroup: text(target.name, 100),
+    targetScheduleId: target.id,
+    targetScheduleDays: text(target.days, 100),
+    targetScheduleStartTime: text(target.startTime, 20),
+    targetScheduleEndTime: text(target.endTime, 20),
+    reason,
+    status: 'pending',
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  };
+  await ref.create(payload);
+  return publicTransferRequest({ ...payload, createdAt: new Date() });
+});
+
+exports.reviewStudentTransferRequest = onCall(CALLABLE_OPTIONS, async request => {
+  const staff = await requireStaff(request);
+  requireStaffSection(staff, 'students', 'schedules');
+  const requestId = cleanDocId(text(request.data?.requestId, 120));
+  const action = request.data?.action === 'approve' ? 'approve' : (request.data?.action === 'reject' ? 'reject' : '');
+  const teacherNote = text(request.data?.teacherNote, 800);
+  if (!requestId || !action) throw new HttpsError('invalid-argument', 'بيانات مراجعة طلب النقل غير مكتملة.');
+  const requestRef = db.collection('student_transfer_requests').doc(requestId);
+  const result = await db.runTransaction(async tx => {
+    const transferSnap = await tx.get(requestRef);
+    if (!transferSnap.exists) throw new HttpsError('not-found', 'طلب النقل غير موجود.');
+    const transfer = { id:transferSnap.id, ...transferSnap.data() };
+    if (transfer.status !== 'pending') throw new HttpsError('failed-precondition', 'تم التعامل مع طلب النقل بالفعل.');
+    if (action === 'reject') {
+      tx.update(requestRef, {
+        status:'rejected', teacherNote, reviewedBy:staff.email||staff.uid,
+        reviewedAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp()
+      });
+      return { ...transfer, status:'rejected', teacherNote, reviewedAt:new Date() };
+    }
+    const studentCode = normalizeCode(transfer.studentCode);
+    const studentRef = db.collection('students').doc(cleanDocId(studentCode));
+    const scheduleRef = db.collection('groups').doc(cleanDocId(transfer.targetScheduleId));
+    const [studentSnap, scheduleSnap] = await Promise.all([tx.get(studentRef), tx.get(scheduleRef)]);
+    if (!studentSnap.exists || studentSnap.data().active === false) throw new HttpsError('not-found', 'حساب الطالب غير موجود أو غير نشط.');
+    if (!scheduleSnap.exists || scheduleSnap.data().active === false) throw new HttpsError('failed-precondition', 'المجموعة المطلوبة لم تعد متاحة.');
+    const student = { id:studentSnap.id, ...studentSnap.data() };
+    const schedule = { id:scheduleSnap.id, ...scheduleSnap.data() };
+    if (!scheduleMatchesStudent(schedule, student)) throw new HttpsError('failed-precondition', 'المجموعة لم تعد مطابقة لصف الطالب أو الترم.');
+    const capacity = Math.max(0, Math.min(500, Number(schedule.capacity || 0)));
+    if (capacity) {
+      const enrolledQuery = db.collection('students').where('group', '==', text(schedule.name,100)).limit(1000);
+      const enrolledSnap = await tx.get(enrolledQuery);
+      const mode = schedule.deliveryMode === 'online' ? 'online' : 'center';
+      const enrolled = enrolledSnap.docs.filter(doc=>{
+        const row=doc.data()||{},rowMode=row.deliveryMode==='online'?'online':'center';
+        return row.active!==false
+          && normalizeCode(row.studentCode||doc.id)!==studentCode
+          && row.grade===schedule.grade
+          && rowMode===mode
+          && (!schedule.term||!row.term||row.term===schedule.term)
+          && (!schedule.academicYear||!row.academicYear||row.academicYear===schedule.academicYear)
+          && (!row.scheduleId||row.scheduleId===schedule.id);
+      }).length;
+      if (enrolled >= capacity) throw new HttpsError('resource-exhausted', 'اكتمل عدد الطلاب في المجموعة قبل اعتماد الطلب.');
+    }
+    const patch = {
+      group:text(schedule.name,100),
+      scheduleId:schedule.id,
+      scheduleDays:text(schedule.days,100),
+      scheduleStartTime:text(schedule.startTime,20),
+      scheduleEndTime:text(schedule.endTime,20),
+      schedulePending:false,
+      updatedAt:FieldValue.serverTimestamp()
+    };
+    const parentCode = normalizeCode(student.parentCode || studentCode);
+    tx.set(studentRef, patch, { merge:true });
+    tx.set(db.collection('student_portal').doc(cleanDocId(studentCode)), { ...patch, studentCode, parentCode }, { merge:true });
+    tx.set(db.collection('parent_portal').doc(cleanDocId(parentCode)), { ...patch, studentCode, parentCode }, { merge:true });
+    tx.set(db.collection('payments').doc(cleanDocId(studentCode)), { group:patch.group, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    tx.update(requestRef, {
+      status:'approved',
+      targetGroup:patch.group,
+      targetScheduleDays:patch.scheduleDays,
+      targetScheduleStartTime:patch.scheduleStartTime,
+      targetScheduleEndTime:patch.scheduleEndTime,
+      teacherNote,
+      reviewedBy:staff.email||staff.uid,
+      reviewedAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp()
+    });
+    return { ...transfer, status:'approved', targetGroup:patch.group, teacherNote, reviewedAt:new Date() };
+  });
+  await db.collection('activityLog').add({
+    action: action==='approve'?'تم اعتماد طلب نقل طالب':'تم رفض طلب نقل طالب',
+    meta:{ requestId, studentCode:result.studentCode, targetGroup:result.targetGroup },
+    actorUid:staff.uid, actorEmail:staff.email||'', createdAt:FieldValue.serverTimestamp()
+  }).catch(()=>{});
+  return publicTransferRequest(result);
+});
+
+async function linkedStudentsForSchedule(scheduleId, previous = {}) {
+  const queries = [db.collection('students').where('scheduleId', '==', scheduleId).limit(1000).get()];
+  if (previous.name) queries.push(db.collection('students').where('group', '==', text(previous.name,100)).limit(1000).get());
+  const snapshots = await Promise.all(queries);
+  const found = new Map();
+  snapshots.flatMap(snap=>snap.docs).forEach(doc=>{
+    const student = { id:doc.id, ...doc.data() };
+    const legacyMatch = !student.scheduleId
+      && student.group === previous.name
+      && (!previous.grade || student.grade === previous.grade)
+      && (!previous.term || !student.term || student.term === previous.term)
+      && (student.deliveryMode === 'online' ? 'online' : 'center') === (previous.deliveryMode === 'online' ? 'online' : 'center');
+    if (student.scheduleId === scheduleId || legacyMatch) found.set(doc.id, student);
+  });
+  return [...found.values()];
+}
+
+async function linkedRecordsForSchedule(scheduleId) {
+  const specs = [
+    ['assignments','scheduleId'],
+    ['exams','scheduleId'],
+    ['materials','scheduleId'],
+    ['student_transfer_requests','targetScheduleId'],
+    ['student_transfer_requests','currentScheduleId']
+  ];
+  const snapshots = await Promise.all(specs.map(([collection,field])=>
+    db.collection(collection).where(field,'==',scheduleId).limit(1000).get()
+  ));
+  const learning = new Map();
+  const transfers = new Map();
+  snapshots.forEach((snap,index)=>{
+    const [collection] = specs[index];
+    snap.docs.forEach(doc=>{
+      const entry = { ref:doc.ref, id:doc.id, collection, data:doc.data()||{} };
+      if (collection === 'student_transfer_requests') transfers.set(doc.ref.path, entry);
+      else learning.set(doc.ref.path, entry);
+    });
+  });
+  return { learning:[...learning.values()], transfers:[...transfers.values()] };
+}
+
+async function commitWriteOperations(operations, chunkSize = 400) {
+  const queue = operations.slice();
+  while (queue.length) {
+    const batch = db.batch();
+    queue.splice(0, chunkSize).forEach(operation=>operation(batch));
+    await batch.commit();
+  }
+}
+
+exports.saveGroupSchedule = onCall(CALLABLE_OPTIONS, async request => {
+  const staff = await requireStaff(request);
+  requireStaffSection(staff, 'schedules');
+  const body = request.data || {};
+  const id = cleanDocId(text(body.id, 100));
+  if (!id) throw new HttpsError('invalid-argument', 'معرّف المجموعة غير صالح.');
+  const schedule = {
+    id,
+    name:text(body.name,100),
+    grade:text(body.grade,80),
+    deliveryMode:body.deliveryMode==='online'?'online':'center',
+    academicYear:text(body.academicYear,20),
+    term:text(body.term,40),
+    days:text(body.days,100),
+    startTime:text(body.startTime,20),
+    endTime:text(body.endTime,20),
+    capacity:Math.max(0,Math.min(500,Number(body.capacity||0))),
+    notes:text(body.notes,1000),
+    active:body.active!==false
+  };
+  if (!schedule.name || !schedule.grade || !schedule.days || !schedule.startTime) throw new HttpsError('invalid-argument', 'اسم المجموعة والصف والأيام والساعة مطلوبة.');
+  const ref = db.collection('groups').doc(id);
+  const [previousSnap, sameNameSnap] = await Promise.all([
+    ref.get(),
+    db.collection('groups').where('name','==',schedule.name).limit(50).get()
+  ]);
+  const duplicate = sameNameSnap.docs.some(doc=>{
+    if (doc.id === id) return false;
+    const row = doc.data()||{};
+    return row.grade===schedule.grade
+      && (row.deliveryMode==='online'?'online':'center')===schedule.deliveryMode
+      && text(row.term,40)===schedule.term
+      && text(row.academicYear,20)===schedule.academicYear;
+  });
+  if (duplicate) throw new HttpsError('already-exists', 'توجد مجموعة أخرى بنفس الاسم لنفس الصف والنوع والترم.');
+  const previous = previousSnap.exists ? { id:previousSnap.id, ...previousSnap.data() } : {};
+  const [students, linked] = await Promise.all([
+    previousSnap.exists ? linkedStudentsForSchedule(id, previous) : Promise.resolve([]),
+    linkedRecordsForSchedule(id)
+  ]);
+  if (students.length) {
+    const structuralChange = previous.grade !== schedule.grade
+      || (previous.deliveryMode==='online'?'online':'center') !== schedule.deliveryMode
+      || text(previous.term,40) !== schedule.term
+      || text(previous.academicYear,20) !== schedule.academicYear;
+    if (structuralChange) throw new HttpsError('failed-precondition', 'لا يمكن تغيير صف أو نوع أو ترم مجموعة عليها طلاب. انقل الطلاب أولًا أو أنشئ مجموعة جديدة.');
+  }
+  if (schedule.capacity && students.length > schedule.capacity) {
+    throw new HttpsError('failed-precondition', `سعة المجموعة لا يمكن أن تقل عن عدد طلابها الحالي (${students.length}).`);
+  }
+  const operations = [
+    batch=>batch.set(ref, {
+      ...schedule,
+      createdAt:previousSnap.exists?(previous.createdAt||FieldValue.serverTimestamp()):FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp()
+    }, { merge:true })
+  ];
+  students.forEach(student=>{
+    const studentCode = normalizeCode(student.studentCode || student.id);
+    const parentCode = normalizeCode(student.parentCode || studentCode);
+    const patch = {
+      group:schedule.name,
+      scheduleId:id,
+      scheduleDays:schedule.days,
+      scheduleStartTime:schedule.startTime,
+      scheduleEndTime:schedule.endTime,
+      schedulePending:false,
+      updatedAt:FieldValue.serverTimestamp()
+    };
+    operations.push(batch=>batch.set(db.collection('students').doc(cleanDocId(studentCode)),patch,{merge:true}));
+    operations.push(batch=>batch.set(db.collection('student_portal').doc(cleanDocId(studentCode)),{...patch,studentCode,parentCode},{merge:true}));
+    operations.push(batch=>batch.set(db.collection('parent_portal').doc(cleanDocId(parentCode)),{...patch,studentCode,parentCode},{merge:true}));
+    operations.push(batch=>batch.set(db.collection('payments').doc(cleanDocId(studentCode)),{group:schedule.name,updatedAt:FieldValue.serverTimestamp()},{merge:true}));
+  });
+  linked.learning.forEach(item=>{
+    operations.push(batch=>batch.set(item.ref,{
+      group:schedule.name,
+      grade:schedule.grade,
+      deliveryMode:schedule.deliveryMode,
+      academicYear:schedule.academicYear,
+      term:schedule.term,
+      updatedAt:FieldValue.serverTimestamp()
+    },{merge:true}));
+  });
+  linked.transfers.filter(item=>item.data.status==='pending').forEach(item=>{
+    const patch = { updatedAt:FieldValue.serverTimestamp() };
+    if (item.data.targetScheduleId===id) {
+      Object.assign(patch,{
+        targetGroup:schedule.name,
+        targetScheduleDays:schedule.days,
+        targetScheduleStartTime:schedule.startTime,
+        targetScheduleEndTime:schedule.endTime,
+        grade:schedule.grade,
+        deliveryMode:schedule.deliveryMode,
+        academicYear:schedule.academicYear,
+        term:schedule.term
+      });
+    }
+    if (item.data.currentScheduleId===id) patch.currentGroup=schedule.name;
+    operations.push(batch=>batch.set(item.ref,patch,{merge:true}));
+  });
+  await commitWriteOperations(operations);
+  return schedule;
+});
+
+exports.deleteGroupSchedule = onCall(CALLABLE_OPTIONS, async request => {
+  const staff = await requireStaff(request);
+  requireStaffSection(staff, 'schedules');
+  const id = cleanDocId(text(request.data?.id, 100));
+  const ref = db.collection('groups').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'المجموعة غير موجودة.');
+  const schedule = { id:snap.id, ...snap.data() };
+  const [students, linked] = await Promise.all([
+    linkedStudentsForSchedule(id, schedule),
+    linkedRecordsForSchedule(id)
+  ]);
+  if (students.length) throw new HttpsError('failed-precondition', `لا يمكن حذف المجموعة لأن بها ${students.length} طالب. انقل الطلاب أولًا.`);
+  if (linked.transfers.some(item=>item.data.status==='pending')) throw new HttpsError('failed-precondition', 'لا يمكن حذف المجموعة لوجود طلبات نقل معلقة مرتبطة بها.');
+  if (linked.learning.length) throw new HttpsError('failed-precondition', `لا يمكن حذف المجموعة لأن عليها ${linked.learning.length} واجب أو امتحان أو محاضرة. غيّر استهداف المحتوى أولًا.`);
+  await ref.delete();
+  return { ok:true, id };
+});
 
 exports.getPublicResources = onCall(CALLABLE_OPTIONS, async request => {
   await rateLimit('public-resources-ip', requestIp(request), 80, 60 * 1000);
@@ -602,21 +1021,33 @@ async function loadOnlineContentForStudent(student = {}, code = '') {
   const snap = await db.collection('materials').limit(300).get();
   const progressSnap = await db.collection('lecture_progress').where('studentCode', '==', code).limit(300).get().catch(() => null);
   const progress = new Map(progressSnap ? progressSnap.docs.map(doc => [String(doc.data().lectureId || ''), Number(doc.data().progress || 0)]) : []);
+  const now = Date.now();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(item => ['live','upcoming','recording','file'].includes(item.contentType))
     .filter(item => item.active !== false)
     .filter(item => item.deliveryMode === 'online')
-    .filter(item => !item.grade || item.grade === 'كل الصفوف' || item.grade === student.grade)
-    .filter(item => !item.term || !student.term || item.term === student.term)
+    .filter(item => learningTargetMatchesStudent(item, student))
     .filter(item => (item.access || 'subscribers') !== 'subscribers' || student.paid === true)
-    .map(item => ({
+    .map(item => {
+      const startAt = scheduledTimeMillis(item.startAt);
+      const duration = Math.max(0, Number(item.duration || 120)) * 60 * 1000;
+      const timeUnlocked = !startAt || (['live','upcoming'].includes(item.contentType)
+        ? now >= startAt - 15 * 60 * 1000 && now <= startAt + duration
+        : now >= startAt);
+      const prerequisiteUnlocked = !item.requiredLessonId || (progress.get(String(item.requiredLessonId)) || 0) >= 80;
+      const linkUnlocked = timeUnlocked && prerequisiteUnlocked;
+      return {
       id: text(item.id, 120), title: text(item.title, 220), desc: text(item.desc, 800), contentType: text(item.contentType, 30),
-      grade: text(item.grade, 80), term: text(item.term, 40), unit: text(item.unit, 120), chapter: text(item.chapter, 120),
+      grade: text(item.grade, 80), group: text(item.group,100), scheduleId:text(item.scheduleId,100), academicYear:text(item.academicYear,20), term: text(item.term, 40), unit: text(item.unit, 120), chapter: text(item.chapter, 120),
       courseTitle: text(item.courseTitle, 160), moduleTitle: text(item.moduleTitle, 160), lessonOrder: Number(item.lessonOrder || 0),
       requiredLessonId: text(item.requiredLessonId, 120),
       startAt: text(item.startAt, 60), duration: Number(item.duration || 120), access: text(item.access, 30),
-      coverUrl: safePublicUrl(item.coverUrl), linkUrl: safePublicUrl(item.linkUrl || item.fileUrl), progress: progress.get(String(item.id)) || 0
-    }));
+      coverUrl: safePublicUrl(item.coverUrl), linkUrl: linkUnlocked ? safePublicUrl(item.linkUrl || item.fileUrl) : '',
+      progress: progress.get(String(item.id)) || 0,
+      timeUnlocked,
+      prerequisiteUnlocked
+    };
+    });
 }
 
 exports.getOnlineContentForStudent = onCall(CALLABLE_OPTIONS, async request => {
@@ -632,8 +1063,28 @@ exports.getOnlineContentForStudent = onCall(CALLABLE_OPTIONS, async request => {
 exports.recordLectureProgress = onCall(CALLABLE_OPTIONS, async request => {
   const code = normalizeCode(request.data && request.data.code), lectureId = text(request.data && request.data.lectureId, 120);
   const progress = Math.max(0, Math.min(100, Number(request.data && request.data.progress || 0)));
-  await getStudentPortalByCode(code);
   if (!lectureId) throw new HttpsError('invalid-argument', 'المحاضرة غير صالحة.');
+  const [found, lectureSnap] = await Promise.all([
+    getStudentPortalByCode(code),
+    db.collection('materials').doc(cleanDocId(lectureId)).get()
+  ]);
+  if (!lectureSnap.exists) throw new HttpsError('not-found', 'المحاضرة غير موجودة.');
+  const lecture = { id:lectureSnap.id, ...lectureSnap.data() };
+  if (lecture.active === false || lecture.deliveryMode !== 'online' || !learningTargetMatchesStudent(lecture, found.data)) {
+    throw new HttpsError('permission-denied', 'هذه المحاضرة غير مخصصة للطالب.');
+  }
+  if ((lecture.access || 'subscribers') === 'subscribers' && found.data.paid !== true) {
+    throw new HttpsError('permission-denied', 'هذه المحاضرة مخصصة للمشتركين.');
+  }
+  const startAt = scheduledTimeMillis(lecture.startAt);
+  if (startAt && Date.now() < startAt) throw new HttpsError('failed-precondition', 'لم يحن موعد فتح المحاضرة بعد.');
+  if (lecture.requiredLessonId) {
+    const prerequisiteId = cleanDocId(`${code}_${lecture.requiredLessonId}`);
+    const prerequisiteSnap = await db.collection('lecture_progress').doc(prerequisiteId).get();
+    if (!prerequisiteSnap.exists || Number(prerequisiteSnap.data().progress || 0) < 80) {
+      throw new HttpsError('failed-precondition', 'أكمل الدرس السابق أولًا.');
+    }
+  }
   const id = cleanDocId(`${code}_${lectureId}`);
   await db.collection('lecture_progress').doc(id).set({ studentCode: code, lectureId, progress, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { ok: true, progress };
@@ -814,18 +1265,21 @@ exports.claimAttendanceSession = onCall(CALLABLE_OPTIONS, async request => {
     const session = sessionSnap.data() || {}, student = studentSnap.exists ? studentSnap.data() : null;
     if (!student || student.active === false) throw new HttpsError('not-found', 'حساب الطالب غير موجود أو غير نشط.');
     if (session.active === false || session.tokenHash !== hash(token) || session.expiresAt?.toMillis() < Date.now()) throw new HttpsError('deadline-exceeded', 'انتهت صلاحية باركود الحضور. اطلب من المدرس باركودًا جديدًا.');
-    if ((student.deliveryMode === 'online' ? 'online' : 'center') !== 'online' || text(student.grade,80) !== session.grade || text(student.group,100) !== session.group) {
+    if ((student.deliveryMode === 'online' ? 'online' : 'center') !== 'online'
+      || text(student.grade,80) !== session.grade
+      || text(student.group,100) !== session.group
+      || (session.scheduleId && student.scheduleId && text(student.scheduleId,100) !== text(session.scheduleId,100))) {
       throw new HttpsError('permission-denied', 'هذا الباركود ليس مخصصًا لموعد الطالب.');
     }
     const date = session.attendanceDate || cairoDateKey(new Date());
-    const attendanceId = cleanDocId(`${studentCode}_${date}`);
+    const attendanceId = cleanDocId(`${studentCode}_${session.sessionId}`);
     const attendanceRef = db.collection('attendance').doc(attendanceId);
     const attendanceSnap = await tx.get(attendanceRef);
     if (attendanceSnap.exists && attendanceSnap.data()?.status === 'present') {
       const existing = attendanceSnap.data() || {};
       return { ok:true, alreadyPresent:true, studentName:text(existing.studentName || student.studentName || student.name,100), date, time:text(existing.time,40) };
     }
-    const record = { id: attendanceId, studentId: studentCode, studentCode, studentName: text(student.studentName || student.name,100), grade: text(student.grade,80), group: text(student.group,100), deliveryMode:'online', scheduleId:session.scheduleId||'', status:'present', date, monthKey:date.slice(0,7), time:new Date().toLocaleTimeString('ar-EG',{timeZone:'Africa/Cairo',hour:'numeric',minute:'2-digit',hour12:true}), method:'online_screen_qr', sessionId:session.sessionId, createdAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() };
+    const record = { id: attendanceId, studentId: studentCode, studentCode, studentName: text(student.studentName || student.name,100), grade: text(student.grade,80), group: text(student.group,100), deliveryMode:'online', scheduleId:session.scheduleId||'', sessionKey:`${date}_${session.sessionId}`, status:'present', date, monthKey:date.slice(0,7), time:new Date().toLocaleTimeString('ar-EG',{timeZone:'Africa/Cairo',hour:'numeric',minute:'2-digit',hour12:true}), method:'online_screen_qr', sessionId:session.sessionId, createdAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() };
     tx.set(attendanceRef, record, { merge: true });
     tx.set(leaderboardStateRef, { version:FieldValue.increment(1), reason:'online-attendance', updatedAt:FieldValue.serverTimestamp() }, { merge:true });
     return { ok:true, alreadyPresent:false, studentName:record.studentName, date, time:record.time };
@@ -840,6 +1294,26 @@ exports.createStudentAccess = onCall(CALLABLE_OPTIONS, async request => {
   if (!hasAtLeastThreeNameParts(name)) throw new HttpsError('invalid-argument', 'اكتب اسم الطالب ثلاثيًا على الأقل، وإذا تكرر الاسم الثلاثي اكتب الاسم الرباعي.');
   if (digits(parentPhone).length < 10) throw new HttpsError('invalid-argument', 'اكتب رقم ولي أمر صحيحًا.');
   const nameIdentity = await assertStudentNameAvailable(name);
+  const requestedMode = body.deliveryMode === 'online' ? 'online' : 'center';
+  const requestedGrade = text(body.grade, 80);
+  const requestedTerm = text(body.term, 40);
+  const requestedYear = text(body.academicYear, 20);
+  const requestedScheduleId = cleanDocId(text(body.scheduleId, 100));
+  let selectedSchedule = null;
+  if (requestedScheduleId) {
+    const scheduleSnap = await db.collection('groups').doc(requestedScheduleId).get();
+    if (!scheduleSnap.exists || scheduleSnap.data().active === false) throw new HttpsError('failed-precondition', 'المجموعة المختارة غير متاحة.');
+    selectedSchedule = { id:scheduleSnap.id, ...scheduleSnap.data() };
+    const candidateStudent = {
+      grade:requestedGrade, deliveryMode:requestedMode, term:requestedTerm, academicYear:requestedYear,
+      group:text(body.group,100), scheduleId:requestedScheduleId
+    };
+    if (!scheduleMatchesStudent(selectedSchedule, candidateStudent)) throw new HttpsError('failed-precondition', 'المجموعة لا تطابق نوع دراسة الطالب أو صفه أو الترم.');
+    const capacity = Math.max(0, Math.min(500, Number(selectedSchedule.capacity || 0)));
+    if (capacity && (await scheduleEnrollment(selectedSchedule, requestedScheduleId)).length >= capacity) {
+      throw new HttpsError('resource-exhausted', 'اكتمل عدد الطلاب في هذه المجموعة.');
+    }
+  }
 
   for (let attemptNo = 0; attemptNo < 8; attemptNo += 1) {
     const studentCode = await uniqueUnifiedAccessCode(8);
@@ -858,12 +1332,17 @@ exports.createStudentAccess = onCall(CALLABLE_OPTIONS, async request => {
       normalizedName: nameIdentity.normalizedName,
       studentPhone: digits(body.studentPhone),
       parentPhone,
-      grade: text(body.grade, 80),
+      grade: requestedGrade,
       month: text(body.month, 40),
-      group: text(body.group, 100),
-      deliveryMode: body.deliveryMode === 'online' ? 'online' : 'center',
-      academicYear: text(body.academicYear, 20),
-      term: text(body.term, 40),
+      group: selectedSchedule ? text(selectedSchedule.name, 100) : text(body.group, 100),
+      deliveryMode: requestedMode,
+      academicYear: requestedYear,
+      term: requestedTerm,
+      scheduleId: selectedSchedule ? selectedSchedule.id : '',
+      scheduleDays: selectedSchedule ? text(selectedSchedule.days, 100) : text(body.scheduleDays, 100),
+      scheduleStartTime: selectedSchedule ? text(selectedSchedule.startTime, 20) : text(body.scheduleStartTime, 20),
+      scheduleEndTime: selectedSchedule ? text(selectedSchedule.endTime, 20) : text(body.scheduleEndTime, 20),
+      schedulePending: !selectedSchedule && body.schedulePending === true,
       notes: text(body.notes, 1500),
       paid: body.paid === true,
       paymentDate: text(body.paymentDate, 40),
@@ -1377,14 +1856,7 @@ exports.recordClassProgress = onCall(CALLABLE_OPTIONS, async request => {
 });
 
 function examMatchesStudent(exam, student) {
-  const examMode = exam.deliveryMode === 'online' ? 'online' : (exam.deliveryMode === 'center' ? 'center' : 'all');
-  const studentMode = student.deliveryMode === 'online' ? 'online' : 'center';
-  const modeOk = examMode === 'all' || examMode === studentMode;
-  const gradeOk = !exam.grade || exam.grade === 'كل الصفوف' || exam.grade === student.grade;
-  const groupOk = !exam.group || exam.group === 'كل المجموعات' || exam.group === student.group;
-  const yearOk = !exam.academicYear || !student.academicYear || exam.academicYear === student.academicYear;
-  const termOk = !exam.term || !student.term || exam.term === student.term;
-  return modeOk && gradeOk && groupOk && yearOk && termOk;
+  return learningTargetMatchesStudent(exam, student);
 }
 
 function examIsOpen(exam, now = Date.now()) {
@@ -1674,17 +2146,15 @@ exports.prepareHomeworkUpload = onCall(CALLABLE_OPTIONS, async request => {
   const found = await getStudentPortalByCode(studentCode);
   const assignmentId = text(body.assignmentId, 120);
   let assignmentTitle = '';
-  if (assignmentId) {
-    const assignmentSnap = await db.collection('assignments').doc(cleanDocId(assignmentId)).get();
-    if (!assignmentSnap.exists || !assignmentIsReleased(assignmentSnap.data())) throw new HttpsError('not-found', 'الواجب غير متاح حاليًا أو لم يحن موعد نشره بعد.');
-    const assignment = assignmentSnap.data() || {};
-    const mode = found.data.deliveryMode === 'online' ? 'online' : 'center';
-    const matches = (!assignment.grade || assignment.grade === 'كل الصفوف' || assignment.grade === found.data.grade)
-      && (!assignment.deliveryMode || assignment.deliveryMode === 'all' || assignment.deliveryMode === mode)
-      && (!assignment.group || assignment.group === 'كل المجموعات' || assignment.group === found.data.group);
-    if (!matches) throw new HttpsError('permission-denied', 'هذا الواجب غير مخصص للطالب.');
-    assignmentTitle = text(assignment.title, 160);
+  if (!assignmentId) throw new HttpsError('invalid-argument', 'اختر الواجب المطلوب قبل رفع الملف.');
+  const assignmentSnap = await db.collection('assignments').doc(cleanDocId(assignmentId)).get();
+  if (!assignmentSnap.exists || !assignmentIsReleased(assignmentSnap.data())) throw new HttpsError('not-found', 'الواجب غير متاح حاليًا أو لم يحن موعد نشره بعد.');
+  const assignment = { id:assignmentSnap.id, ...assignmentSnap.data() };
+  if (!learningTargetMatchesStudent(assignment, found.data)) throw new HttpsError('permission-denied', 'هذا الواجب غير مخصص للطالب.');
+  if (!assignmentSubmissionIsOpen(assignment, Date.now(), cairoDateKey(new Date()))) {
+    throw new HttpsError('deadline-exceeded', 'انتهى آخر موعد لتسليم هذا الواجب.');
   }
+  assignmentTitle = text(assignment.title, 160);
   const fileName = text(body.fileName, 180).replace(/[\\/#?\[\]]/g, '-');
   const contentType = text(body.contentType, 100);
   const size = Number(body.size || 0);
@@ -1699,6 +2169,7 @@ exports.prepareHomeworkUpload = onCall(CALLABLE_OPTIONS, async request => {
     size,
     assignmentId,
     assignmentTitle,
+    dueDate: text(assignment.dueDate, 10),
     expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
     createdAt: FieldValue.serverTimestamp()
   });
@@ -1739,6 +2210,15 @@ exports.registerHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
   if (!fileUrl) throw new HttpsError('internal', 'تعذر تجهيز رابط ملف الواجب. حاول مرة أخرى.');
   const assignmentId = text(token.assignmentId, 120);
   if (text(body.assignmentId, 120) !== assignmentId) throw new HttpsError('permission-denied', 'بيانات الواجب لا تطابق تصريح الرفع.');
+  const assignmentSnap = await db.collection('assignments').doc(cleanDocId(assignmentId)).get();
+  if (!assignmentSnap.exists) throw new HttpsError('not-found', 'الواجب لم يعد متاحًا.');
+  const assignment = { id:assignmentSnap.id, ...assignmentSnap.data() };
+  if (!learningTargetMatchesStudent(assignment, found.data)) throw new HttpsError('permission-denied', 'هذا الواجب لم يعد مخصصًا للطالب.');
+  if (!assignmentSubmissionIsOpen(assignment, Date.now(), cairoDateKey(new Date()))) {
+    await bucket.file(filePath).delete().catch(()=>{});
+    await tokenRef.delete().catch(()=>{});
+    throw new HttpsError('deadline-exceeded', 'انتهى آخر موعد لتسليم هذا الواجب.');
+  }
   const ref = assignmentId ? db.collection('homework_submissions').doc(cleanDocId(`${studentCode}_${assignmentId}`)) : db.collection('homework_submissions').doc();
   const submittedAt = new Date().toISOString();
   const batch = db.batch();
@@ -1791,7 +2271,7 @@ const BACKUP_COLLECTIONS = [
   'settings','users','students','student_portal','parent_portal','bookings','booking_status','reviews',
   'materials','questions','groups','assignments','exams','exam_attempts','homework_submissions',
   'attendance','recitations','grades','payments','payment_records','reports','activityLog','client_errors',
-  'student_attempts','exam_locks'
+  'student_attempts','exam_locks','student_transfer_requests'
 ];
 
 function encodeBackupValue(value) {
@@ -1985,7 +2465,7 @@ exports.deleteStudentSafely = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 120,
   if (!studentSnap.exists) throw new HttpsError('not-found', 'الطالب غير موجود.');
   const student = studentSnap.data();
   const { nameKey } = studentNameIdentity(student.studentName || student.name);
-  const relatedCollections = ['attendance','grades','recitations','homework_submissions','exam_attempts','payment_records'];
+  const relatedCollections = ['attendance','grades','recitations','homework_submissions','exam_attempts','payment_records','student_transfer_requests'];
   const relatedEntries = {};
   const relatedDocs = [];
   for (const collection of relatedCollections) {

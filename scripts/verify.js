@@ -218,7 +218,8 @@ if (!failures.some(x => x.includes('duplicate-student-name') || x.includes('Dupl
 const callableNames = [
   'getPortalStudent', 'createStudentAccess', 'createBooking', 'approveBooking', 'rejectBooking', 'getBookingStatus', 'createReview', 'recordClassProgress', 'registerTeacherPushToken',
   'getExamDashboard', 'startExam', 'submitExam', 'prepareHomeworkUpload', 'registerHomeworkSubmission', 'reportClientError',
-  'createBackupNow', 'listAutomaticBackups', 'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely'
+  'createBackupNow', 'listAutomaticBackups', 'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely',
+  'createStudentTransferRequest', 'reviewStudentTransferRequest', 'saveGroupSchedule', 'deleteGroupSchedule'
 ];
 for (const name of callableNames) {
   if (!functionsSource.includes(`exports.${name} = onCall`)) fail(`Missing callable function export: ${name}`);
@@ -376,7 +377,7 @@ if(!read('firestore.rules').includes("assistantCan('payments')")||!read('firesto
 if(!staffAdminSource.includes('vodafoneCashNumber')||!staffAdminSource.includes('instapayAccount'))fail('Manual payment settings are incomplete');
 if(!read('index.html').includes('bookingPaymentMethod')||!read('index.html').includes('bookingReceipt')||!staffFunctionsSource.includes('exports.uploadBookingReceipt')||!staffFunctionsSource.includes('exports.reviewBookingReceipt'))fail('Booking payment method or receipt review workflow is incomplete');
 if(!staffAdminSource.includes('shareParentReportPdf')||!read('assets/app.js').includes('createParentReportPdf')||!read('assets/app.js').includes("loadLazyScript('jspdf'"))fail('Monthly PDF report sharing is incomplete');
-if(!staffFunctionsSource.includes('examMatchesStudent(exam, student)')||!staffFunctionsSource.includes("exam.group === student.group")||!staffAdminSource.includes('name=\"examFormat\"'))fail('Exam targeting or PDF/questions format is incomplete');
+if(!staffFunctionsSource.includes('examMatchesStudent(exam, student)')||!staffFunctionsSource.includes('learningTargetMatchesStudent(exam, student)')||!staffAdminSource.includes('name=\"examFormat\"'))fail('Exam targeting or PDF/questions format is incomplete');
 if(!read('assets/app.js').includes('تحديد المجموعة لاحقًا')&&!read('index.html').includes('تحديد الموعد لاحقًا'))fail('Booking without a fixed schedule is missing');
 if(!staffAdminSource.includes('requiredLessonId')||!courseOnlineSource.includes('prerequisiteLocked')||!courseOnlineSource.includes('data-complete-lesson'))fail('Course lesson ordering and completion flow are incomplete');
 for(const feature of ['adminGlobalSearch','admin-quick-add','admin-attention-list','quickAdminCreate','admin-nav-group','adminSaveState']){
@@ -404,6 +405,9 @@ if (!appSourceCode.includes("document.getElementById('bookingTerm')") || !appSou
 if (!functionsSource.includes('schedule.term') || !functionsSource.includes('requestedTerm')) fail('Secure booking term validation is incomplete');
 if (!read('online.html').includes('online-filter-panel') || !read('online.html').includes('<footer class="footer') || !read('assets/site.css').includes('body.mobile-nav-active .mobile-bottom{display:grid!important')) fail('Online mobile filters, footer, or bottom navigation are incomplete');
 if (!functionsSource.includes('schedule.capacity') || !adminSourceCode.includes('capacity')) fail('Schedule capacity enforcement is incomplete');
+if (!functionsSource.includes('exports.createStudentTransferRequest') || !functionsSource.includes('exports.reviewStudentTransferRequest') || !appSourceCode.includes('bindStudentTransferForms') || !adminSourceCode.includes('renderStudentRequests')) fail('Student group-transfer request workflow is incomplete');
+if (!functionsSource.includes('exports.saveGroupSchedule') || !functionsSource.includes('exports.deleteGroupSchedule') || !firebaseSyncSourceCode.includes('saveGroupSchedule') || !rules.includes('match /student_transfer_requests/{id}')) fail('Secure schedule propagation or transfer-request rules are incomplete');
+if (!functionsSource.includes('assignmentSubmissionIsOpen') || !appSourceCode.includes('assignmentSubmissionOpenClient') || !adminSourceCode.includes('scheduleId=form.elements.group.selectedOptions')) fail('Deadline enforcement or exact schedule targeting is incomplete');
 if (!adminSourceCode.includes("mode==='all'||grade==='all'||group==='all'") || !adminSourceCode.includes('سيتم تسجيل غياب')) fail('Mass absence guard is incomplete');
 if (!appSourceCode.includes('parseUnifiedStudentQr') || !adminSourceCode.includes('createOnlineAttendanceQr')) fail('Unified QR attendance flow is missing');
 if (!read('assets/v61-ui.js').includes("document.documentElement.classList.add('reveal-enabled')") || !read('assets/v61.css').includes('.reveal-enabled .reveal-ready')) fail('Fail-safe content reveal is incomplete');

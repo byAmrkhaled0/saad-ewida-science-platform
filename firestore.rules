@@ -80,7 +80,16 @@ service cloud.firestore {
     // Direct document reads stay closed so subscriber links cannot be scraped.
     match /materials/{id} { allow read: if isStaff(); allow write: if isTeacher() || assistantCan('content'); }
     match /questions/{id} { allow read: if isStaff(); allow write: if isTeacher() || assistantCan('content'); }
-    match /groups/{id} { allow read: if !('active' in resource.data) || resource.data.active != false || isStaff(); allow write: if isTeacher() || assistantCan('schedules'); }
+    match /groups/{id} {
+      allow read: if !('active' in resource.data) || resource.data.active != false || isStaff();
+      // Group writes are server-only so edits can update every linked student
+      // and deletion can be blocked while students or transfer requests exist.
+      allow write: if false;
+    }
+    match /student_transfer_requests/{id} {
+      allow read: if isTeacher() || assistantCan('students') || assistantCan('schedules');
+      allow write: if false;
+    }
     match /assignments/{id} { allow read: if isStaff(); allow write: if isTeacher() || assistantCan('assignments'); }
     match /exams/{id} { allow read: if isStaff(); allow write: if isTeacher() || assistantCan('exams'); }
 

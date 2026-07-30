@@ -347,6 +347,17 @@ function portalAssignmentQuestions(item){
   if(Array.isArray(item?.questions))return item.questions.map(value=>String(value||'').trim()).filter(Boolean);
   return String(item?.questionsText||'').split(/\n+/).map(value=>value.trim()).filter(Boolean);
 }
+function cairoPortalDateKey(value=new Date()){
+  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(value);
+  const get=type=>parts.find(part=>part.type===type)?.value||'';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+function assignmentSubmissionOpenClient(item,now=new Date()){
+  if(!assignmentIsReleasedClient(item,now.getTime())||item?.submissionClosed===true)return false;
+  const due=String(item?.dueDate||'').trim();
+  return !/^\d{4}-\d{2}-\d{2}$/.test(due)||cairoPortalDateKey(now)<=due;
+}
+function studentTransferStatusLabel(status){return status==='approved'?'تمت الموافقة على النقل':status==='rejected'?'تم رفض الطلب':'الطلب قيد مراجعة المدرس';}
 function studentProfileHTML(raw, isParent=false){
   const st=normalizedStudent(raw); const c=calcStudent(st);
   const monthly=st.monthlyIncentive&&typeof st.monthlyIncentive==='object'?st.monthlyIncentive:{};
@@ -360,10 +371,13 @@ function studentProfileHTML(raw, isParent=false){
   const grades=[...gradeMap.values()].sort((a,b)=>String(a.submittedAt||a.date||'').localeCompare(String(b.submittedAt||b.date||''))).reverse();
   const attendance=getAttendanceRows(st);
   const submittedHomeworks=(st.homeworks||[]),submittedIds=new Set(submittedHomeworks.map(item=>String(item.assignmentId||item.id||'')));
-  const assignedHomeworks=(st.assignments||[]).filter(item=>assignmentIsReleasedClient(item)).map(item=>({...item,assignmentId:item.id,status:submittedIds.has(String(item.id))?'تم التسليم':'مطلوب',completed:submittedIds.has(String(item.id))}));
+  const assignedHomeworks=(st.assignments||[]).filter(item=>assignmentIsReleasedClient(item)).map(item=>{const submitted=submittedIds.has(String(item.id)),open=assignmentSubmissionOpenClient(item);return {...item,assignmentId:item.id,status:submitted?'تم التسليم':open?'مطلوب':'انتهى موعد التسليم',completed:submitted,submissionClosed:!open};});
   const homeworks=[...assignedHomeworks,...submittedHomeworks].slice().reverse();
-  const pendingAssignments=assignedHomeworks.filter(item=>!submittedIds.has(String(item.id)));
-  const assignmentPicker=pendingAssignments.length?`<label class="homework-assignment-picker"><span>اختر الواجب</span><select name="assignmentId" required><option value="">اختر الواجب الذي ستسلمه</option>${pendingAssignments.map(item=>`<option value="${esc(item.id)}">${esc(item.title||'واجب')} ${item.dueDate?`— ${esc(item.dueDate)}`:''}</option>`).join('')}</select></label>`:'<p class="section-desc">لا توجد واجبات مطلوبة حاليًا؛ يمكنك رفع ملف متابعة عام.</p>';
+  const pendingAssignments=assignedHomeworks.filter(item=>!submittedIds.has(String(item.id))&&assignmentSubmissionOpenClient(item));
+  const assignmentPicker=pendingAssignments.length?`<label class="homework-assignment-picker"><span>اختر الواجب</span><select name="assignmentId" required><option value="">اختر الواجب الذي ستسلمه</option>${pendingAssignments.map(item=>`<option value="${esc(item.id)}">${esc(item.title||'واجب')} ${item.dueDate?`— ${esc(item.dueDate)}`:''}</option>`).join('')}</select></label>`:'';
+  const homeworkUploadForm=pendingAssignments.length?`<form class="homework-upload-form student-upload-card" data-student-code="${esc(st.studentCode)}">${assignmentPicker}<label><span data-icon="upload"></span><span><b>ارفع الواجب</b><small>صورة أو PDF بحد أقصى 10MB</small></span><input type="file" name="file" accept="image/*,application/pdf"></label><button class="btn primary" type="submit"><span data-icon="upload"></span> رفع الملف</button></form>`:'<div class="portal-empty compact-homework-empty"><span class="iconbox" data-icon="user-check"></span><h3>لا توجد واجبات مفتوحة للتسليم</h3><p>الواجبات المسلّمة أو التي انتهى موعدها ستظل ظاهرة في السجل بالأعلى.</p></div>';
+  const transferOptions=Array.isArray(st.transferOptions)?st.transferOptions:[],transferRequest=st.transferRequest&&typeof st.transferRequest==='object'?st.transferRequest:null,transferPending=transferRequest?.status==='pending';
+  const transferPanel=isParent?'':`<section class="student-tab-panel" data-student-panel="transfer"><div class="student-panel-title"><div><span class="kicker"><span data-icon="user-check"></span> طلب نقل</span><h3>الانتقال إلى مجموعة أخرى</h3></div>${transferRequest?`<span class="badge ${transferRequest.status==='approved'?'good':transferRequest.status==='rejected'?'danger':'warn'}">${studentTransferStatusLabel(transferRequest.status)}</span>`:''}</div>${transferRequest?`<article class="student-transfer-status-card ${esc(transferRequest.status)}"><div><small>آخر طلب</small><h4>${esc(transferRequest.currentGroup||st.group||'-')} ← ${esc(transferRequest.targetGroup||'-')}</h4><p>${esc(transferRequest.reason||'')}</p>${transferRequest.teacherNote?`<small>رد المدرس: ${esc(transferRequest.teacherNote)}</small>`:''}</div></article>`:''}${transferPending?'<div class="portal-empty"><span class="iconbox" data-icon="calendar"></span><h3>طلبك قيد المراجعة</h3><p>لا يمكن إرسال طلب جديد قبل أن يراجع المدرس الطلب الحالي.</p></div>':transferOptions.length?`<form class="student-transfer-form" data-student-code="${esc(st.studentCode)}"><label><span>المجموعة الجديدة</span><select name="targetScheduleId" required><option value="">اختر المجموعة</option>${transferOptions.map(item=>`<option value="${esc(item.id)}">${esc(item.name)} — ${esc(item.days||'')} ${item.startTime?`· ${esc(formatTime12(item.startTime))}`:''}</option>`).join('')}</select></label><label><span>سبب طلب النقل</span><textarea name="reason" rows="4" maxlength="800" required placeholder="مثال: الموعد الحالي يتعارض مع المدرسة أو التدريب"></textarea></label><button class="btn primary" type="submit">إرسال الطلب للمدرس</button></form>`:'<div class="portal-empty"><span class="iconbox" data-icon="calendar"></span><h3>لا توجد مجموعات أخرى متاحة</h3><p>تظهر هنا فقط المجموعات النشطة المطابقة لصفك ونوع دراستك والترم الحالي.</p></div>'}</section>`;
   const recitations=(st.recitations||[]).slice().reverse();
   const paymentHistory=(st.paymentHistory||[]).slice(0,12);
   const paymentCards=paymentHistory.length?paymentHistory.map(item=>`<article class="student-record-card"><div><span class="record-eyebrow">${esc(item.monthLabel||item.monthKey||'اشتراك')}</span><h4>${item.paid?'تم دفع الاشتراك':'لم يتم الدفع'}</h4><small>${esc(item.paymentDate||'')}${Number(item.amount||0)?` · ${esc(item.amount)} ج.م`:''}</small></div><span class="badge ${item.paid?'good':'warn'}">${item.paid?'مدفوع':'غير مدفوع'}</span></article>`).join(''):'<div class="portal-empty"><span class="iconbox" data-icon="clipboard"></span><h3>لا يوجد سجل اشتراكات بعد</h3><p>سيظهر كل شهر هنا بعد تسجيله من المدرس.</p></div>';
@@ -400,6 +414,7 @@ function studentProfileHTML(raw, isParent=false){
       <button type="button" data-student-tab="attendance"><span data-icon="calendar"></span><span>الحضور</span></button>
       <button type="button" data-student-tab="recitation"><span data-icon="book-open"></span><span>التسميع</span></button>
       <button type="button" data-student-tab="homework"><span data-icon="file-text"></span><span>الواجبات</span></button>
+      ${isParent?'':'<button type="button" data-student-tab="transfer"><span data-icon="user-check"></span><span>طلب نقل</span></button>'}
     </nav>
     <section class="student-tab-panel show" data-student-panel="overview">
       <div class="student-overview-grid">
@@ -413,7 +428,8 @@ function studentProfileHTML(raw, isParent=false){
     <section class="student-tab-panel" data-student-panel="grades"><div class="student-panel-title"><div><span class="kicker"><span data-icon="bar-chart"></span> النتائج</span><h3>درجات الامتحانات</h3></div><span class="badge">${grades.length} نتيجة</span></div><div class="student-record-list">${gradeCards}</div></section>
     <section class="student-tab-panel" data-student-panel="attendance"><div class="student-panel-title"><div><span class="kicker"><span data-icon="calendar"></span> المتابعة</span><h3>سجل الحضور والغياب</h3></div><span class="badge good">${c.present} حضور</span></div><div class="attendance-mini-kpis"><span><b>${c.totalAttendance}</b> إجمالي</span><span><b>${c.present}</b> حاضر</span><span><b>${c.absent}</b> غائب</span></div><div class="student-record-list">${attendanceCards}</div></section>
     <section class="student-tab-panel" data-student-panel="recitation"><div class="student-panel-title"><div><span class="kicker"><span data-icon="book-open"></span> التسميع</span><h3>سجل تسميع الطالب</h3></div><span class="badge good">${c.recitationCount} مرة</span></div><div class="student-record-list">${recitationCards}</div></section>
-    <section class="student-tab-panel" data-student-panel="homework"><div class="student-panel-title"><div><span class="kicker"><span data-icon="file-text"></span> الواجبات</span><h3>واجبات الطالب</h3></div></div><div class="student-record-list">${homeworkCards}</div><form class="homework-upload-form student-upload-card" data-student-code="${esc(st.studentCode)}">${assignmentPicker}<label><span data-icon="upload"></span><span><b>ارفع الواجب</b><small>صورة أو PDF بحد أقصى 10MB</small></span><input type="file" name="file" accept="image/*,application/pdf"></label><button class="btn primary" type="submit"><span data-icon="upload"></span> رفع الملف</button></form></section>
+    <section class="student-tab-panel" data-student-panel="homework"><div class="student-panel-title"><div><span class="kicker"><span data-icon="file-text"></span> الواجبات</span><h3>واجبات الطالب</h3></div></div><div class="student-record-list">${homeworkCards}</div>${homeworkUploadForm}</section>
+    ${transferPanel}
   </div>`;
 }
 function bindStudentDashboard(){
@@ -476,7 +492,7 @@ async function setupStudent(){
         try{if(!window.MFCloud?.claimAttendanceSession)throw new Error('Attendance claim service is unavailable');const result=await window.MFCloud.claimAttendanceSession(pendingStudentAttendanceToken,code);showStudentAttendanceBanner(result?.alreadyPresent?'أنت مسجل حضور بالفعل في هذه الحصة.':`${result?.studentName||st.name||''} · ${result?.time||'الآن'}`,true);pendingStudentAttendanceToken='';const cleanUrl=new URL(location.href);cleanUrl.searchParams.delete('attendance');cleanUrl.searchParams.set('code',code);history.replaceState({},'',cleanUrl);}
         catch(error){attendanceError=error;showStudentAttendanceBanner(firebaseFriendlyError(error,'تعذر تسجيل الحضور. تأكد أن الباركود خاص بموعدك.'));}
       }
-      box.innerHTML=studentProfileHTML(st,false); applyStudentModeVisibility(box,st); bindStudentDashboard(); bindHomeworkForms(); scheduleAssignmentReleaseRefresh(st.nextAssignmentPublishAt,form); hydrateIcons();
+      box.innerHTML=studentProfileHTML(st,false); applyStudentModeVisibility(box,st); bindStudentDashboard(); bindHomeworkForms(); bindStudentTransferForms(form,code); scheduleAssignmentReleaseRefresh(st.nextAssignmentPublishAt,form); hydrateIcons();
       if(attendanceError)toast('فتحت البوابة، لكن تعذر تسجيل الحضور');
       box.scrollIntoView({behavior:'smooth',block:'start'});
     }catch(err){const raw=String(err?.code||'')+' '+String(err?.message||'');const message=/not-found/i.test(raw)?'كود الطالب غير موجود أو لم يُعتمد بعد':/internal|unavailable|failed-precondition|function.*unavailable/i.test(raw)?'خدمة بوابة الطالب غير متاحة حاليًا':firebaseFriendlyError(err,'تعذر تحميل بيانات الطالب');box.innerHTML=dataErrorHTML(message);hydrateIcons();}
@@ -758,6 +774,21 @@ window.closeParentQrScanner = async function(){
   const modal=document.getElementById('parentQrModal'); if(modal) modal.hidden=true;
 };
 function bindHomeworkForms(){document.querySelectorAll('.homework-upload-form').forEach(form=>{form.onsubmit=async event=>{event.preventDefault();const input=form.querySelector('input[type=file]'),assignment=form.querySelector('[name=assignmentId]'),button=form.querySelector('button[type=submit]'),file=input?.files?.[0],code=form.dataset.studentCode;if(assignment&&!assignment.value)return toast('اختر الواجب الذي تريد تسليمه');if(!file)return toast('اختار ملف الواجب أولًا');if(file.size>10*1024*1024)return toast('حجم الملف أكبر من 10MB');button?.classList.add('is-loading');if(button)button.disabled=true;try{if(!window.MFCloud?.uploadHomework)throw new Error('Homework upload service unavailable');await window.MFCloud.uploadHomework(file,code,assignment?.value||'');if(input)input.value='';toast('تم رفع الواجب بنجاح');}catch(error){toast(firebaseFriendlyError(error,'تعذر رفع الواجب. الملف لم يُسجل ويمكنك المحاولة مرة أخرى.'));}finally{button?.classList.remove('is-loading');if(button)button.disabled=false;}};});}
+function bindStudentTransferForms(portalForm,studentCode){
+  document.querySelectorAll('.student-transfer-form').forEach(form=>{form.onsubmit=async event=>{
+    event.preventDefault();const button=form.querySelector('[type=submit]'),payload=Object.fromEntries(new FormData(form).entries());
+    if(!payload.targetScheduleId)return toast('اختر المجموعة الجديدة');
+    if(String(payload.reason||'').trim().length<3)return toast('اكتب سبب طلب النقل');
+    button?.classList.add('is-loading');if(button)button.disabled=true;
+    try{
+      if(!window.MFCloud?.createStudentTransferRequest)throw new Error('Student transfer service is unavailable');
+      await window.MFCloud.createStudentTransferRequest({studentCode,targetScheduleId:payload.targetScheduleId,reason:String(payload.reason||'').trim()});
+      portalStudentCache.delete(normalizeText(studentCode));toast('تم إرسال طلب النقل للمدرس');
+      if(portalForm?.isConnected)portalForm.requestSubmit();
+    }catch(error){toast(firebaseFriendlyError(error,'تعذر إرسال طلب النقل. حاول مرة أخرى.'));}
+    finally{button?.classList.remove('is-loading');if(button)button.disabled=false;}
+  };});
+}
 function setupBookingSteps(form){if(!form)return;const steps=[...form.querySelectorAll('[data-booking-step]')],indicators=[...form.querySelectorAll('[data-booking-indicator]')];const show=number=>{steps.forEach(step=>step.classList.toggle('active',Number(step.dataset.bookingStep)===number));indicators.forEach(item=>{const value=Number(item.dataset.bookingIndicator);item.classList.toggle('active',value===number);item.classList.toggle('done',value<number);});};form.querySelector('[data-booking-next]')?.addEventListener('click',()=>{const first=steps[0],required=[...first.querySelectorAll('[required]')];for(const input of required){if(!input.checkValidity()){input.reportValidity();return;}}show(2);steps[1]?.scrollIntoView({behavior:'smooth',block:'center'});});form.querySelector('[data-booking-back]')?.addEventListener('click',()=>show(1));form.addEventListener('booking-success',()=>{show(3);form.scrollIntoView({behavior:'smooth',block:'center'});});show(1);}
 function setupBooking(){
   const form=document.getElementById('bookingForm');
