@@ -32,7 +32,7 @@ function calculateMonthlyMetrics({ studentCode = '', monthKey, attendance = [], 
   const present = att.filter(row => ['present', 'حاضر', 'متأخر'].includes(row.status)).length;
   const attendancePct = att.length ? Math.round((present / att.length) * 100) : 0;
   const gradePct = gradeRows.length
-    ? Math.round(gradeRows.reduce((sum, row) => sum + Number(row.score), 0) / gradeRows.length)
+    ? Math.round(gradeRows.reduce((sum, row) => {const saved=Number(row.percentage);if(Number.isFinite(saved))return sum+saved;const max=Number(row.maxScore||100);return sum+(max?Number(row.score)*100/max:0);}, 0) / gradeRows.length)
     : 0;
   const classDates = new Set(att.map(recordDate).filter(Boolean));
   homeworkRows.forEach(row => { const date = recordDate(row); if (date) classDates.add(date); });

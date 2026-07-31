@@ -392,7 +392,8 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '69.1.1' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.1.1'") || !read('service-worker.js').includes('mf-science-v6911-academic-linking-audit') || [...functionsSource.matchAll(/'platform-release': '69-1-1'/g)].length !== 2) fail('V69.1.1 version and cache identifiers are not unified');
+if (packageInfo.version !== '69.2.1' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.1'") || !read('service-worker.js').includes('mf-science-v6921-exam-attendance-filters') || [...functionsSource.matchAll(/'platform-release': '69-2-0'/g)].length !== 2) fail('V69.2.1 frontend and V69.2.0 backend release identifiers are invalid');
+if (!read('assets/v56-fixes.js').includes('saadExamFilterV6921') || !read('assets/v56-fixes.js').includes('saadExamGroupV6921') || !read('assets/v56-fixes.js').includes("_attendance:'missing'")) fail('V69.2.1 exam attendance filters are incomplete');
 if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
 if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
 if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');

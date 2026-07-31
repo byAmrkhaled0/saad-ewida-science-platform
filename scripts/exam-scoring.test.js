@@ -1,0 +1,8 @@
+'use strict';
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
+const {assignQuestionScores,scoreSummary}=require('../functions/lib/exam-scoring');
+const {getExamScheduleState}=require('../functions/lib/exam-schedule');
+test('weighted questions produce a real mark and percentage',()=>{const questions=assignQuestionScores([{points:2},{points:3},{points:5}],10);assert.deepEqual(scoreSummary(questions,[2,0,5]),{score:7,maxScore:10,percentage:70});});
+test('legacy exams remain compatible as 100 marks',()=>{const questions=assignQuestionScores([{},{}]);assert.equal(questions.reduce((sum,row)=>sum+row.points,0),100);});
+test('exam schedule exposes upcoming open and closed states',()=>{const exam={active:true,openAt:'2026-07-31T10:00:00Z',closeAt:'2026-07-31T12:00:00Z'};assert.equal(getExamScheduleState(exam,new Date('2026-07-31T09:00:00Z').getTime()).state,'upcoming');assert.equal(getExamScheduleState(exam,new Date('2026-07-31T11:00:00Z').getTime()).state,'open');assert.equal(getExamScheduleState(exam,new Date('2026-07-31T12:00:00Z').getTime()).state,'closed');});
+test('student parent admin and live results use actual marks',()=>{const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8'),admin=fs.readFileSync(path.join(root,'assets/admin.js'),'utf8'),fixes=fs.readFileSync(path.join(root,'assets/v56-fixes.js'),'utf8'),sync=fs.readFileSync(path.join(root,'assets/firebase-sync.js'),'utf8');assert.match(app,/function gradeMark/);assert.match(admin,/data-question-points/);assert.match(fixes,/الطلاب الذين أدّوا الامتحانات/);assert.match(fixes,/انتهى الوقت/);assert.match(sync,/subscribeToExamAttempts/);});

@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '69.1.1';
+const release = '69.2.1';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -107,7 +107,7 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
 // execution order while removing the many render-blocking version requests.
 const cssParts = ['site.css','v55.css','v56.css','v57.css','v59.css','v60.css','v61.css','v64-mobile.css'];
 const publicJsParts = ['app.js','v53-upgrades.js','v56-fixes.js','v61-ui.js'];
-const adminJsParts = ['app.js','admin.js','v61-ui.js'];
+const adminJsParts = ['app.js','admin.js','v56-fixes.js','v61-ui.js'];
 const joinAssets = (items, output) => fs.writeFileSync(
   path.join(dist, 'assets', output),
   items.map(name => fs.readFileSync(path.join(root, 'assets', name), 'utf8')).join('\n;\n')

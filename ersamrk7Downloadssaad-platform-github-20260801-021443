@@ -1,0 +1,106 @@
+warning: in the working copy of '.firebaserc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.firebaserc.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.vercelignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'AUDIT_REPORT_V69.1.1_AR.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README_DEPLOY.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/admin.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/app.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/firebase-config.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/firebase-lazy.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/firebase-sync.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/logo-icon.svg', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/online.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/site.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v53-upgrades.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v55.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v56-fixes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v56.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v57.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v59.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v60.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v61-ui.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v61.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/v64-mobile.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/vendor/LICENSE-firebase.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/vendor/LICENSE-html5-qrcode.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/vendor/LICENSE-xlsx.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/vendor/firebase-messaging-worker-10.12.5.min.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/vendor/jspdf.umd.min.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/vendor/xlsx-0.18.5.full.min.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'deploy-firebase-rules.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'deploy-production.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'exams.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firebase-messaging-sw.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firebase.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firestore.indexes.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firestore.rules', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'functions/index.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'functions/lib/assignment-schedule.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'functions/lib/monthly-incentive.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'functions/lib/student-name.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'functions/package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'functions/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'local-server.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'materials.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'offline.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'online.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'parent.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'prepare-github-folder.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'privacy.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'questions.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'reviews.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'robots.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/admin-academic-linking.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/assignment-schedule.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/build.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/monthly-incentive.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/student-name.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/verify-live-functions.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/verify.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'service-worker.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'services.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'site.webmanifest', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'sitemap.xml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'start-site.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'storage.rules', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'student.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'teacher-login.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'teacher.webmanifest', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'terms.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'vercel.json', LF will be replaced by CRLF the next time Git touches it
+ README.md                          | 16 [32m+++++++[m[31m-[m
+ README_DEPLOY.md                   |  4 [32m+[m[31m-[m
+ assets/admin.js                    | 25 [32m+++++++[m[31m-----[m
+ assets/app.js                      | 28 [32m+++++++[m[31m------[m
+ assets/firebase-lazy.js            |  2 [32m+[m[31m-[m
+ assets/firebase-sync.js            |  7 [32m++[m[31m--[m
+ assets/v56-fixes.js                | 82 [32m++++++++++++++++++++++++++++++++++++++[m
+ assets/v64-mobile.css              |  8 [32m++++[m
+ deploy-production.ps1              |  2 [32m+[m[31m-[m
+ exams.html                         | 20 [32m+++++[m[31m-----[m
+ functions/index.js                 | 69 [32m+++++++++++++++++++++[m[31m-----------[m
+ functions/lib/monthly-incentive.js |  2 [32m+[m[31m-[m
+ index.html                         | 24 [32m+++++[m[31m------[m
+ materials.html                     | 20 [32m+++++[m[31m-----[m
+ offline.html                       |  4 [32m+[m[31m-[m
+ online.html                        |  6 [32m+[m[31m--[m
+ package-lock.json                  |  4 [32m+[m[31m-[m
+ package.json                       |  4 [32m+[m[31m-[m
+ parent.html                        | 20 [32m+++++[m[31m-----[m
+ prepare-github-folder.ps1          |  4 [32m+[m[31m-[m
+ privacy.html                       | 16 [32m++++[m[31m----[m
+ questions.html                     | 16 [32m++++[m[31m----[m
+ reviews.html                       | 20 [32m+++++[m[31m-----[m
+ scripts/build.js                   |  4 [32m+[m[31m-[m
+ scripts/verify.js                  |  3 [32m+[m[31m-[m
+ service-worker.js                  |  2 [32m+[m[31m-[m
+ services.html                      | 20 [32m+++++[m[31m-----[m
+ student.html                       | 20 [32m+++++[m[31m-----[m
+ teacher-login.html                 | 15 [32m+++[m[31m----[m
+ terms.html                         | 16 [32m++++[m[31m----[m
+ 30 files changed, 310 insertions(+), 173 deletions(-)

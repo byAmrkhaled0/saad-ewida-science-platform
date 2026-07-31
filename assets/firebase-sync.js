@@ -336,7 +336,7 @@
 
     async function loadStaffRecordCollections(){
       const [attempts,grades,attendance,recitations,homeworks]=await Promise.all([
-        getDocs('exam_attempts',3000).catch(()=>[]),getDocs('grades',5000).catch(()=>[]),getDocs('attendance',5000,{orderBy:'date',direction:'desc'}).catch(()=>[]),
+        db.collection('exam_attempts').orderBy('submittedAt','desc').limit(1000).get().then(snap=>snap.docs.map(doc=>({id:doc.id,...doc.data()}))).catch(()=>getDocs('exam_attempts',1000).catch(()=>[])),getDocs('grades',5000).catch(()=>[]),getDocs('attendance',5000,{orderBy:'date',direction:'desc'}).catch(()=>[]),
         getDocs('recitations',3000).catch(()=>[]),getDocs('homework_submissions',3000).catch(()=>[])
       ]);
       attendance.forEach(item=>seedFingerprint('attendance',cleanDocId(item.id),item));
@@ -661,6 +661,7 @@
       },
       rejectBooking:async code=>{if(!calls.rejectBooking)throw new Error('Secure booking rejection function is unavailable');return calls.rejectBooking({code:normalizeCode(code)});},
       subscribeToBookings:handler=>db.collection('bookings').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>handler(snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id})),snap.docChanges()),error=>console.warn('booking-listener',error)),
+      subscribeToExamAttempts:handler=>db.collection('exam_attempts').orderBy('submittedAt','desc').limit(500).onSnapshot(snap=>handler(snap.docs.map(doc=>({id:doc.id,...doc.data()})),snap.docChanges()),error=>console.warn('exam-attempt-listener',error)),
       registerTeacherPushToken:async()=>{
         if(!cfg.messagingVapidKey||!firebase.messaging||!calls.registerTeacherPushToken)throw new Error('VAPID_KEY_REQUIRED');
         if(!('serviceWorker' in navigator))throw new Error('SERVICE_WORKER_UNSUPPORTED');
@@ -706,10 +707,10 @@
         const profile=await getCurrentStaffProfile();if(!profile?.allowed||!['admin','teacher'].includes(profile.role))throw new Error('Not authorized');
         const id=cleanDocId(attempt.id||`${attempt.examId}_${attempt.studentCode}`),studentCode=normalizeCode(attempt.studentCode||'');const ops=[];
         ops.push(batch=>batch.set(db.collection('exam_attempts').doc(id),{...attempt,id,studentCode,updatedAt:serverTime()},{merge:true}));
-        if(studentCode){const parent=db.collection('student_attempts').doc(cleanDocId(studentCode));const summary={id,studentCode,examId:attempt.examId||'',examTitle:attempt.examTitle||attempt.exam||'امتحان',submittedAt:attempt.submittedAt||attempt.date||nowIso(),score:attempt.score??null,autoScore:attempt.autoScore??null,needsManualReview:attempt.needsManualReview===true,status:attempt.status||'',academicYear:attempt.academicYear||'',term:attempt.term||''};ops.push(batch=>batch.set(parent,{studentCode,lastAttempt:summary,updatedAt:serverTime()},{merge:true}));ops.push(batch=>batch.set(parent.collection('attempts').doc(id),summary,{merge:true}));}
+        if(studentCode){const parent=db.collection('student_attempts').doc(cleanDocId(studentCode));const summary={id,studentCode,examId:attempt.examId||'',examTitle:attempt.examTitle||attempt.exam||'امتحان',submittedAt:attempt.submittedAt||attempt.date||nowIso(),score:attempt.score??null,autoScore:attempt.autoScore??null,maxScore:Number(attempt.maxScore||100),percentage:attempt.percentage??(Number(attempt.maxScore||100)?Math.round(Number(attempt.score||0)/Number(attempt.maxScore||100)*100):null),answers:Array.isArray(attempt.answers)?attempt.answers:[],needsManualReview:attempt.needsManualReview===true,status:attempt.status||'',academicYear:attempt.academicYear||'',term:attempt.term||''};ops.push(batch=>batch.set(parent,{studentCode,lastAttempt:summary,updatedAt:serverTime()},{merge:true}));ops.push(batch=>batch.set(parent.collection('attempts').doc(id),summary,{merge:true}));}
         if(studentCode&&attempt.score!==null&&attempt.score!==undefined&&attempt.score!==''){
           const gradeDate=attempt.submittedAt||attempt.date||nowIso();
-          ops.push(batch=>batch.set(db.collection('grades').doc(id),{id,attemptId:id,examId:attempt.examId||'',exam:attempt.examTitle||attempt.exam||'امتحان',examTitle:attempt.examTitle||attempt.exam||'امتحان',studentCode,studentName:attempt.studentName||'',grade:attempt.grade||'',group:attempt.group||'',score:Number(attempt.score),maxScore:Number(attempt.maxScore||100),date:dateKey(gradeDate),submittedAt:gradeDate,monthKey:monthKey(gradeDate),source:'manual_exam_correction',updatedAt:serverTime()},{merge:true}));
+          ops.push(batch=>batch.set(db.collection('grades').doc(id),{id,attemptId:id,examId:attempt.examId||'',exam:attempt.examTitle||attempt.exam||'امتحان',examTitle:attempt.examTitle||attempt.exam||'امتحان',studentCode,studentName:attempt.studentName||'',grade:attempt.grade||'',group:attempt.group||'',score:Number(attempt.score),maxScore:Number(attempt.maxScore||100),percentage:attempt.percentage??Math.round(Number(attempt.score||0)/Number(attempt.maxScore||100)*100),date:dateKey(gradeDate),submittedAt:gradeDate,monthKey:monthKey(gradeDate),source:'manual_exam_correction',updatedAt:serverTime()},{merge:true}));
           ops.push(batch=>batch.set(db.collection('_system').doc('leaderboard'),{version:firebase.firestore.FieldValue.increment(1),reason:'exam-corrected',updatedAt:serverTime()},{merge:true}));
         }
         await commitOperations(ops);

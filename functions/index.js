@@ -16,6 +16,8 @@ const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
 const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
+const { positiveScore, assignQuestionScores, scoreSummary } = require('./lib/exam-scoring');
+const { getExamScheduleState } = require('./lib/exam-schedule');
 const { normalizeStudentName, studentNameIdentity, hasAtLeastThreeNameParts } = require('./lib/student-name');
 const {
   scheduledTimeMillis,
@@ -23,7 +25,7 @@ const {
   assignmentDueDatePassed,
   assignmentSubmissionIsOpen
 } = require('./lib/assignment-schedule');
-const BACKEND_RELEASE = '69.1.1';
+const BACKEND_RELEASE = '69.2.0';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -33,7 +35,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '69-1-1' }
+  labels: { 'platform-release': '69-2-0' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -41,7 +43,7 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '69-1-1' }
+  labels: { 'platform-release': '69-2-0' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
@@ -365,6 +367,7 @@ function publicExamSession(sessionId, exam, questions, startedAtMs, expiresAtMs)
       title: text(exam.title, 200),
       instructions: text(exam.instructions, 1500),
       duration: Math.max(1, Math.min(240, Number(exam.duration || 20))),
+      maxScore: positiveScore(exam.maxScore, questions.reduce((sum,q)=>sum+positiveScore(q.points,1),0)),
       pdfUrl: safePublicUrl(exam.pdfUrl || exam.examPdfUrl),
       pdfName: text(exam.pdfName || exam.examPdfName, 220)
     },
@@ -373,6 +376,7 @@ function publicExamSession(sessionId, exam, questions, startedAtMs, expiresAtMs)
     questions: questions.map(q => ({
       type: q.type,
       question: q.question,
+      points: positiveScore(q.points,1),
       options: q.options,
       optionLabels: q.optionLabels
     }))
@@ -397,11 +401,13 @@ function parseExamQuestions(source) {
   return blocks.map(block => {
     const lines = block.split('\n').map(x => x.trim()).filter(Boolean);
     const answerLine = lines.find(line => /^(answer|correct|الإجابة|الاجابة|الإجابة الصحيحة|الاجابة الصحيحة)\s*[:=：-]?/i.test(line));
+    const pointsLine = lines.find(line => /^(points?|marks?|score|الدرجة|درجات)\s*[:=：-]?/i.test(line));
     const answer = answerLine ? cleanAnswerLine(answerLine) : '';
+    const points = pointsLine ? positiveScore(normalizeDigits(pointsLine).replace(/^[^:=：\-]*[:=：-]?\s*/i,''),1) : null;
     const options = [];
     const questionLines = [];
     for (const line of lines) {
-      if (line === answerLine) continue;
+      if (line === answerLine || line === pointsLine) continue;
       const option = parseOptionLine(line);
       if (option) options.push(option);
       else questionLines.push(line.replace(/^س\d*\s*[:\-]?\s*/, '').trim());
@@ -413,10 +419,10 @@ function parseExamQuestions(source) {
         question,
         options: options.slice(0, 8).map(o => text(o.text, 700)),
         optionLabels: options.slice(0, 8).map(o => text(o.label, 10)),
-        answer: text(answer, 700)
+        answer: text(answer, 700), points
       };
     }
-    return { type: 'essay', question, options: [], optionLabels: [], answer: '' };
+    return { type: 'essay', question, options: [], optionLabels: [], answer: '', points };
   }).filter(q => q.question);
 }
 
@@ -586,6 +592,9 @@ async function attemptSummaries(studentCode) {
     examTitle: text(a.examTitle, 200),
     submittedAt: text(a.submittedAt, 60),
     score: a.score === null || a.score === undefined ? null : Number(a.score),
+    maxScore: Number(a.maxScore||100),
+    percentage: a.percentage===null||a.percentage===undefined?(a.score===null||a.score===undefined?null:Math.round(Number(a.score)/Number(a.maxScore||100)*100)):Number(a.percentage),
+    answers: Array.isArray(a.answers)?a.answers:[],
     autoScore: a.autoScore === null || a.autoScore === undefined ? null : Number(a.autoScore),
     needsManualReview: a.needsManualReview === true,
     status: text(a.status, 40)
@@ -1862,12 +1871,7 @@ function examMatchesStudent(exam, student) {
 }
 
 function examIsOpen(exam, now = Date.now()) {
-  if (exam.active === false) return false;
-  const openAt = exam.openAt ? new Date(exam.openAt).getTime() : 0;
-  const closeAt = exam.closeAt ? new Date(exam.closeAt).getTime() : 0;
-  if (openAt && Number.isFinite(openAt) && now < openAt) return false;
-  if (closeAt && Number.isFinite(closeAt) && now > closeAt) return false;
-  return true;
+  return getExamScheduleState(exam,now).state==='open';
 }
 
 exports.getExamDashboard = onCall(CALLABLE_OPTIONS, async request => {
@@ -1878,7 +1882,7 @@ exports.getExamDashboard = onCall(CALLABLE_OPTIONS, async request => {
   const snap = await db.collection('exams').get();
   const exams = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(exam => examMatchesStudent(exam, found.data))
-    .filter(exam => examIsOpen(exam))
+    .filter(exam => exam.active !== false)
     .map(exam => ({
       id: text(exam.id, 100),
       title: text(exam.title, 200),
@@ -1894,10 +1898,12 @@ exports.getExamDashboard = onCall(CALLABLE_OPTIONS, async request => {
       pdfName: text(exam.pdfName || exam.examPdfName, 220),
       examFormat: ['pdf', 'mixed'].includes(exam.examFormat) ? exam.examFormat : 'questions',
       allowRetake: exam.allowRetake === true,
+      maxScore: positiveScore(exam.maxScore,100),
+      scheduleState: getExamScheduleState(exam).state,
       questionCount: Number(exam.questionCount || parseExamQuestions(exam.text || exam.questionsText).length)
     }));
   const [attempts, records] = await Promise.all([attemptSummaries(studentCode), studentRecords(studentCode)]);
-  return { student: portalResponse(found.data, attempts, records), exams };
+  return { student: portalResponse(found.data, attempts, records), exams, serverNow:Date.now() };
 });
 
 exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
@@ -1912,12 +1918,14 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
   if (!examMatchesStudent(exam, found.data)) {
     throw new HttpsError('permission-denied', 'هذا الامتحان غير مخصص لصفك أو مجموعتك أو عامك الدراسي.');
   }
-  const questions = parseExamQuestions(exam.text || exam.questionsText || '');
+  const questions = assignQuestionScores(parseExamQuestions(exam.text || exam.questionsText || ''),exam.maxScore);
   if (!questions.length) throw new HttpsError('failed-precondition', 'الامتحان لا يحتوي على أسئلة صالحة.');
   if (questions.length > 200) throw new HttpsError('failed-precondition', 'عدد أسئلة الامتحان أكبر من الحد المسموح.');
 
   const durationMinutes = Math.max(1, Math.min(240, Number(exam.duration || 20)));
   const now = Date.now();
+  const schedule=getExamScheduleState(exam,now);
+  const sessionDeadline=schedule.closeAtMs?Math.min(now+durationMinutes*60*1000,schedule.closeAtMs):now+durationMinutes*60*1000;
   const sessionId = cleanDocId(`${examId}_${studentCode}`);
   const sessionRef = db.collection('exam_sessions').doc(sessionId);
   const lockRef = db.collection('exam_locks').doc(sessionId);
@@ -1958,12 +1966,13 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
       pdfUrl: safePublicUrl(exam.pdfUrl || exam.examPdfUrl),
       pdfName: text(exam.pdfName || exam.examPdfName, 220),
       duration: durationMinutes,
+      maxScore: questions.reduce((sum,q)=>sum+positiveScore(q.points,1),0),
       allowRetake: exam.allowRetake === true,
       attemptSequence,
       status: 'started',
       questions,
       startedAt: Timestamp.fromMillis(now),
-      expiresAt: Timestamp.fromMillis(now + durationMinutes * 60 * 1000),
+      expiresAt: Timestamp.fromMillis(sessionDeadline),
       deleteAt: Timestamp.fromMillis(now + 30 * 24 * 60 * 60 * 1000),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
@@ -1986,6 +1995,7 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
     duration: sessionData.duration || durationMinutes,
     pdfUrl: sessionData.pdfUrl || exam.pdfUrl || exam.examPdfUrl,
     pdfName: sessionData.pdfName || exam.pdfName || exam.examPdfName
+    ,maxScore: sessionData.maxScore||exam.maxScore
   }, snapshotQuestions, startedAtMs, expiresAtMs);
 });
 
@@ -2011,9 +2021,9 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
     title: session.examTitle || 'امتحان',
     allowRetake: session.allowRetake === true
   };
-  const questions = Array.isArray(session.questions) && session.questions.length
+  const questions = assignQuestionScores(Array.isArray(session.questions) && session.questions.length
     ? session.questions
-    : parseExamQuestions(exam.text || exam.questionsText || '');
+    : parseExamQuestions(exam.text || exam.questionsText || ''),session.maxScore||exam.maxScore);
   if (!questions.length) throw new HttpsError('failed-precondition', 'تعذر قراءة أسئلة الامتحان.');
   if (Object.keys(rawAnswers).length > questions.length + 5) throw new HttpsError('invalid-argument', 'عدد الإجابات غير صالح.');
 
@@ -2039,7 +2049,9 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
         correct,
         correctAnswer: question.answer,
         options: question.options,
-        optionLabels: question.optionLabels
+        optionLabels: question.optionLabels,
+        points: positiveScore(question.points,1),
+        awardedScore: correct===true?positiveScore(question.points,1):0
       });
     } else {
       essayCount += 1;
@@ -2049,13 +2061,17 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
         type: 'essay',
         answer: text(value, 4000),
         correct: null,
-        correctAnswer: 'يصححها المدرس'
+        correctAnswer: 'يصححها المدرس',
+        points: positiveScore(question.points,1),
+        awardedScore: null
       });
     }
   });
 
-  const autoScore = mcqCount ? Math.round((correctCount / mcqCount) * 100) : null;
-  const score = needsManualReview ? null : (autoScore || 0);
+  const autoAwarded=Math.round(staffAnswers.reduce((sum,item)=>sum+(Number(item.awardedScore)||0),0)*100)/100;
+  const scored=scoreSummary(questions,staffAnswers.map(item=>item.awardedScore),needsManualReview);
+  const autoScore=autoAwarded;
+  const score=scored.score,percentage=scored.percentage,maxScore=scored.maxScore;
   const attemptRef = db.collection('exam_attempts').doc();
   const submittedAt = new Date().toISOString();
   const monthKey = cairoDateKey(submittedAt).slice(0, 7);
@@ -2073,7 +2089,8 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
     submittedAt,
     score,
     autoScore,
-    maxScore: 100,
+    maxScore,
+    percentage,
     mcqCount,
     essayCount,
     questionCount: questions.length,
@@ -2091,6 +2108,9 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
     submittedAt,
     score,
     autoScore,
+    maxScore,
+    percentage,
+    answers: staffAnswers,
     needsManualReview,
     status: attempt.status,
     academicYear: attempt.academicYear,
@@ -2124,7 +2144,8 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
         grade: attempt.grade,
         group: attempt.group,
         score,
-        maxScore: 100,
+        maxScore,
+        percentage,
         date: cairoDateKey(submittedAt),
         submittedAt,
         monthKey,

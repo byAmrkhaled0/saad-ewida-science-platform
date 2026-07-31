@@ -12,7 +12,7 @@ var LAST_EXAM_CODE_KEY = 'mf_last_exam_code';
 var EXAM_DRAFT_PREFIX = 'mf_exam_draft_v2_';
 var PENDING_BOOKING_REQUEST_KEY = 'mf_pending_booking_request_v1';
 var cloudSaveTimer = null;
-var MF_ASSET_VERSION = '69.1.1';
+var MF_ASSET_VERSION = '69.2.1';
 var mfLazyScriptPromises = Object.create(null);
 
 function loadLazyScript(key, source, readyCheck){
@@ -101,6 +101,8 @@ function readAdminStudentPreview(code){try{const raw=sessionStorage.getItem(ADMI
 function formatPortalDate(value){if(!value)return '-'; try{return new Date(value).toLocaleDateString('ar-EG',{year:'numeric',month:'short',day:'numeric'});}catch(e){return String(value);}}
 function scoreLabel(score){const n=Number(score); if(Number.isNaN(n)) return 'بانتظار التصحيح'; return n>=90?'ممتاز':n>=75?'جيد جدًا':n>=60?'جيد':'يحتاج متابعة';}
 function scoreClass(score){const n=Number(score); if(Number.isNaN(n)) return 'warn'; return n>=75?'good':n>=60?'warn':'danger';}
+function gradePercentage(row){const stored=Number(row?.percentage);if(Number.isFinite(stored))return Math.max(0,Math.min(100,Math.round(stored)));const score=Number(row?.score),max=Number(row?.maxScore||row?.totalScore||100);return Number.isFinite(score)&&max>0?Math.max(0,Math.min(100,Math.round(score/max*100))):null;}
+function gradeMark(row){return `${Number(row?.score||0)} من ${Number(row?.maxScore||row?.totalScore||100)}`;}
 function getSiteBase(){return (appData.settings?.siteUrl || DEFAULT_SITE_URL || location.origin).replace(/\/$/,'');}
 function defaultData(){return {students:[],bookings:[],materials:[],questions:[],exams:[],examAttempts:[],grades:[],reviews:[],groups:[],assignments:[],paymentRecords:[],studentTransferRequests:[],settings:{siteUrl:DEFAULT_SITE_URL||'',teacherPhone:TEACHER_WHATSAPP||''}};}
 function mergeData(data){const d=defaultData(); const p=data||{}; return {...d,...p,settings:{...d.settings,...(p.settings||{})},students:Array.isArray(p.students)?p.students:[],bookings:Array.isArray(p.bookings)?p.bookings:[],materials:Array.isArray(p.materials)?p.materials:[],questions:Array.isArray(p.questions)?p.questions:[],exams:Array.isArray(p.exams)?p.exams:[],examAttempts:Array.isArray(p.examAttempts)?p.examAttempts:[],grades:Array.isArray(p.grades)?p.grades:[],reviews:Array.isArray(p.reviews)?p.reviews:[],groups:Array.isArray(p.groups)?p.groups:[],assignments:Array.isArray(p.assignments)?p.assignments:[],paymentRecords:Array.isArray(p.paymentRecords)?p.paymentRecords:[],studentTransferRequests:Array.isArray(p.studentTransferRequests)?p.studentTransferRequests:[]};}
@@ -244,7 +246,7 @@ function calcStudent(st){
   const present = attendance.filter(a=>(a.status==='present'||a.status==='حاضر'||a.status==='متأخر')).length;
   const attendancePct = total ? Math.round((present/total)*100) : 0;
   const graded=(st.grades||[]).filter(g=>g.score!==''&&g.score!==undefined&&g.score!==null&&!isNaN(Number(g.score)));
-  const avg=graded.length?Math.round(graded.reduce((s,g)=>s+Number(g.score),0)/graded.length):0;
+  const avg=graded.length?Math.round(graded.reduce((s,g)=>s+(gradePercentage(g)||0),0)/graded.length):0;
   const recitations=(st.recitations||[]).filter(classRecordComplete),homeworks=(st.homeworks||[]).filter(classRecordComplete);
   const classDates=new Set(attendance.map(classRecordDate).filter(Boolean));
   recitations.forEach(row=>{const date=classRecordDate(row);if(date)classDates.add(date);});
@@ -384,7 +386,7 @@ function studentProfileHTML(raw, isParent=false){
   const initials=String(st.name||'ط').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('');
   const gradeCards=grades.length?grades.slice(0,12).map(g=>{
     const hasScore=g.score!==null&&g.score!==undefined&&g.score!=='';
-    return `<article class="student-record-card grade-record-card"><div><span class="record-eyebrow">${esc(formatPortalDate(g.date||g.submittedAt))}</span><h4>${esc(g.exam||g.examTitle||'امتحان')}</h4><small>${hasScore?esc(scoreLabel(g.score)):'سيظهر التقييم بعد تصحيح المدرس'}</small></div><strong class="score-pill ${hasScore?scoreClass(g.score):'warn'}">${hasScore?esc(g.score)+'%':'قيد التصحيح'}</strong></article>`;
+    const pct=gradePercentage(g);return `<article class="student-record-card grade-record-card"><div><span class="record-eyebrow">${esc(formatPortalDate(g.date||g.submittedAt))}</span><h4>${esc(g.exam||g.examTitle||'امتحان')}</h4><small>${hasScore?`مستوى الطالب ${esc(pct)}%`:'سيظهر التقييم بعد تصحيح المدرس'}</small></div><strong class="score-pill ${hasScore?scoreClass(pct):'warn'}">${hasScore?esc(gradeMark(g)):'قيد التصحيح'}</strong></article>`;
   }).join(''):'<div class="portal-empty"><span class="iconbox" data-icon="bar-chart"></span><h3>لا توجد درجات بعد</h3><p>ستظهر نتائج الامتحانات هنا فور تسجيلها.</p></div>';
   const attendanceCards=attendance.length?attendance.slice(0,14).map(r=>`<article class="student-record-card"><div><span class="record-eyebrow">${esc(formatTime12(r.time)||'موعد الحصة')}</span><h4>${esc(r.date||'-')}</h4><small>${esc(r.group||st.group||'-')}</small></div><span class="badge ${statusClass(r.status)}">${arStatus(r.status)}</span></article>`).join(''):'<div class="portal-empty"><span class="iconbox" data-icon="calendar"></span><h3>لا توجد سجلات حضور</h3><p>يضيف المدرس سجل الحضور، وسيظهر هنا تلقائيًا.</p></div>';
   const homeworkCards=homeworks.length?homeworks.slice(0,12).map(h=>{const questions=portalAssignmentQuestions(h);return `<article class="student-record-card student-assignment-card"><div><span class="record-eyebrow">واجب دراسي</span><h4>${esc(h.title||h.homeworkTitle||'واجب')}</h4>${h.notes?`<small>${esc(h.notes)}</small>`:''}${h.dueDate?`<small>آخر موعد: ${esc(formatPortalDate(h.dueDate))}</small>`:''}${questions.length?`<ol class="student-assignment-questions">${questions.map(question=>`<li>${esc(question)}</li>`).join('')}</ol>`:''}${h.fileUrl?`<a class="small-btn assignment-file-link" href="${esc(h.fileUrl)}" target="_blank" rel="noopener"><span data-icon="file-text"></span> فتح PDF / ملف الواجب</a>`:''}</div><span class="badge ${classRecordComplete(h)?'good':'warn'}">${esc(h.status||(classRecordComplete(h)?'تم عمل الواجب':'قيد المتابعة'))}</span></article>`;}).join(''):'<div class="portal-empty"><span class="iconbox" data-icon="file-text"></span><h3>لا توجد واجبات مسجلة</h3><p>يمكنك رفع ملف الواجب من الزر الموجود بالأسفل.</p></div>';
@@ -419,7 +421,7 @@ function studentProfileHTML(raw, isParent=false){
     <section class="student-tab-panel show" data-student-panel="overview">
       <div class="student-overview-grid">
         <article class="student-highlight-card"><span class="iconbox" data-icon="sparkles"></span><div><small>تقييمك الحالي</small><h3>${esc(c.level)}</h3><p>استمر في الحضور وحل الامتحانات والتسميع والواجبات لتحسين ترتيبك.</p></div></article>
-        <article class="student-highlight-card"><span class="iconbox" data-icon="star"></span><div><small>آخر درجة</small><h3>${c.lastGrade?esc(c.lastGrade.score)+'%':'لا توجد بعد'}</h3><p>${c.lastGrade?esc(c.lastGrade.exam||c.lastGrade.examTitle||'آخر امتحان'):'ستظهر آخر نتيجة هنا.'}</p></div></article>
+        <article class="student-highlight-card"><span class="iconbox" data-icon="star"></span><div><small>آخر درجة</small><h3>${c.lastGrade?esc(gradeMark(c.lastGrade)):'لا توجد بعد'}</h3><p>${c.lastGrade?`${esc(c.lastGrade.exam||c.lastGrade.examTitle||'آخر امتحان')} · المستوى ${gradePercentage(c.lastGrade)}%`:'ستظهر آخر نتيجة هنا.'}</p></div></article>
       </div>
       <article class="teacher-note-card"><span data-icon="clipboard"></span><div><small>ملاحظات المدرس</small><p>${esc(st.notes||'لا توجد ملاحظات حالية. استمر في المذاكرة والمتابعة.')}</p></div></article>
       <details class="student-payment-history"><summary><span data-icon="clipboard"></span><b>سجل الاشتراكات الشهرية</b><span class="badge">${paymentHistory.length}</span></summary><div class="student-record-list">${paymentCards}</div></details>
@@ -541,7 +543,7 @@ function parentReportText(raw){
   const rows = studentReportRows(st);
   const lastGrade = rows.grades.filter(g=>g.score!==undefined && g.score!==null && g.score!=='').slice(-1)[0];
   const lastAttendance = rows.attendance.slice(0,6).map(r=>`- ${r.date || '-'}: ${arStatus(r.status)} ${r.time ? '('+formatTime12(r.time)+')' : ''}`).join('\n') || '- لا توجد سجلات حضور بعد';
-  return `تقرير متابعة شهر ${monthLabel(st)}\n\nالطالب: ${st.name || '-'}\nالكود الموحد: ${st.studentCode || '-'}\nالصف: ${st.grade || '-'}\nالمجموعة: ${st.group || '-'}\n\nملخص الحالة:\n- المستوى العام: ${c.final}% - ${c.level}\n- نسبة الحضور: ${c.attendancePct}%\n- متوسط الدرجات: ${c.avg}%\n- انتظام التسميع: ${c.recitationPct}% (${c.recitationCount} مرة)\n- انتظام الواجب: ${c.homeworkPct}% (${c.homeworkCount} مرة)\n- حالة الاشتراك: ${st.paid ? 'تم الدفع' : 'لم يتم الدفع'}${st.platformRank?`\n- ترتيب الطالب على صفه: ${st.platformRank}${st.platformRank<=10?' — من أوائل المنصة':''}`:''}\n\nآخر درجة: ${lastGrade ? (lastGrade.exam || lastGrade.examTitle || 'امتحان') + ' - ' + (lastGrade.score ?? 'بانتظار التصحيح') : 'لا توجد درجات بعد'}\n\nالحضور والغياب:\n${lastAttendance}\n\nملاحظات المدرس:\n${st.notes || 'لا توجد ملاحظات حالية.'}\n\nمع تحيات المستر سعد عويضة`;
+  return `تقرير متابعة شهر ${monthLabel(st)}\n\nالطالب: ${st.name || '-'}\nالكود الموحد: ${st.studentCode || '-'}\nالصف: ${st.grade || '-'}\nالمجموعة: ${st.group || '-'}\n\nملخص الحالة:\n- المستوى العام: ${c.final}% - ${c.level}\n- نسبة الحضور: ${c.attendancePct}%\n- متوسط مستوى الامتحانات: ${c.avg}%\n- انتظام التسميع: ${c.recitationPct}% (${c.recitationCount} مرة)\n- انتظام الواجب: ${c.homeworkPct}% (${c.homeworkCount} مرة)\n- حالة الاشتراك: ${st.paid ? 'تم الدفع' : 'لم يتم الدفع'}${st.platformRank?`\n- ترتيب الطالب على صفه: ${st.platformRank}${st.platformRank<=10?' — من أوائل المنصة':''}`:''}\n\nآخر درجة: ${lastGrade ? (lastGrade.exam || lastGrade.examTitle || 'امتحان') + ' - ' + gradeMark(lastGrade) + ' (المستوى ' + gradePercentage(lastGrade) + '%)' : 'لا توجد درجات بعد'}\n\nالحضور والغياب:\n${lastAttendance}\n\nملاحظات المدرس:\n${st.notes || 'لا توجد ملاحظات حالية.'}\n\nمع تحيات المستر سعد عويضة`;
 }
 
 let reportFontBase64='';
@@ -566,7 +568,7 @@ window.createParentReportPdf=async function(raw){
   if(st.platformRank)line('الترتيب على الصف',`${st.platformRank}${st.platformRank<=10?' — من أوائل المنصة':''}`);
   y+=3;doc.setFontSize(13);doc.text('ملاحظات المستر',right,y,{align:'right'});y+=8;doc.setFontSize(11);const notes=doc.splitTextToSize(st.notes||'لا توجد ملاحظات حالية.',175);doc.text(notes,right,y,{align:'right',maxWidth:175});y+=notes.length*6+8;
   const grades=studentReportRows(st).grades.filter(row=>row.score!==undefined&&row.score!==null).slice(-6).reverse();
-  if(grades.length&&y<250){doc.setFontSize(13);doc.text('أحدث الدرجات',right,y,{align:'right'});y+=8;doc.setFontSize(10);grades.forEach(row=>{if(y<275){doc.text(`${row.exam||row.examTitle||'امتحان'} — ${row.score}%`,right,y,{align:'right'});y+=6;}});}
+  if(grades.length&&y<250){doc.setFontSize(13);doc.text('أحدث الدرجات',right,y,{align:'right'});y+=8;doc.setFontSize(10);grades.forEach(row=>{if(y<275){doc.text(`${row.exam||row.examTitle||'امتحان'} — ${gradeMark(row)} — المستوى ${gradePercentage(row)}%`,right,y,{align:'right'});y+=6;}});}
   doc.setFontSize(9);doc.setTextColor(90,105,110);doc.text(`تاريخ التقرير: ${new Date().toLocaleDateString('ar-EG')} — مع تحيات المستر سعد عويضة`,center,290,{align:'center'});
   return doc.output('blob');
 };
@@ -629,7 +631,7 @@ function parentReportHTML(raw){
     <div class="parent-detail-grid-v40">
       <div class="mini-panel parent-panel-v40">
         <h3>الدرجات والامتحانات</h3>
-        ${grades.length?grades.map(g=>`<div class="report-list-row-v40"><div><b>${esc(g.exam||g.examTitle||'امتحان')}</b><small>${esc(g.date||g.submittedAt||'')}</small></div><span class="badge ${g.score!==null&&g.score!==undefined?'good':'warn'}">${g.score!==null&&g.score!==undefined?esc(g.score)+'%':'بانتظار التصحيح'}</span></div>`).join(''):'<p class="section-desc">لا توجد درجات مسجلة بعد.</p>'}
+        ${grades.length?grades.map(g=>`<div class="report-list-row-v40"><div><b>${esc(g.exam||g.examTitle||'امتحان')}</b><small>${esc(g.date||g.submittedAt||'')} · المستوى ${gradePercentage(g)??'-'}%</small></div><span class="badge ${g.score!==null&&g.score!==undefined?'good':'warn'}">${g.score!==null&&g.score!==undefined?esc(gradeMark(g)):'بانتظار التصحيح'}</span></div>`).join(''):'<p class="section-desc">لا توجد درجات مسجلة بعد.</p>'}
       </div>
       <div class="mini-panel parent-panel-v40">
         <h3>الواجبات والمتابعة</h3>
@@ -956,19 +958,21 @@ function parseExamQuestions(text){
   return blocks.map(block=>{
     const lines=block.split('\n').map(x=>x.trim()).filter(Boolean);
     const answerLine=lines.find(l=>/^(answer|correct|الإجابة|الاجابة|الإجابة الصحيحة|الاجابة الصحيحة)\s*[:=：-]?/i.test(l));
+    const pointsLine=lines.find(l=>/^(points?|marks?|score|الدرجة|درجات)\s*[:=：-]?/i.test(l));
     const answer=answerLine?cleanAnswerLine(answerLine):'';
+    const points=pointsLine?Number(toEnglishDigits(pointsLine).replace(/^[^:=：\-]*[:=：-]?\s*/i,'')):null;
     const optionObjs=[];
     const questionLines=[];
     lines.forEach(l=>{
-      if(l===answerLine) return;
+      if(l===answerLine||l===pointsLine) return;
       const opt=parseOptionLine(l);
       if(opt) optionObjs.push(opt); else questionLines.push(l.replace(/^س\d*\s*[:\-]?\s*/,'').trim());
     });
     const q=(questionLines[0]||lines[0]||'سؤال').replace(/^س\d*\s*[:\-]?\s*/,'').trim();
     if(optionObjs.length){
-      return {type:'mcq',question:q,options:optionObjs.map(o=>o.text),optionLabels:optionObjs.map(o=>o.label),answer};
+      return {type:'mcq',question:q,options:optionObjs.map(o=>o.text),optionLabels:optionObjs.map(o=>o.label),answer,points};
     }
-    return {type:'essay',question:q,answer:''};
+    return {type:'essay',question:q,answer:'',points};
   });
 }
 function hasSubmitted(examId, code){
@@ -1044,7 +1048,7 @@ window.startExam=async function(examId,studentCode){
   next.addEventListener('click',()=>{saveVisibleAnswer();if(!currentAnswered())return toast('اختر أو اكتب إجابة السؤال أولًا');current++;renderCurrent();stage.scrollIntoView({behavior:'smooth',block:'start'});});
   prev.addEventListener('click',()=>{saveVisibleAnswer();if(current>0){current--;renderCurrent();}});
   exit.addEventListener('click',()=>{saveVisibleAnswer();if(confirm('سيتم حفظ إجاباتك والوقت سيستمر. هل تريد الخروج؟')){clearInterval(timer);overlay.classList.remove('show');document.body.classList.remove('exam-open');toast('تم حفظ المحاولة، يمكنك متابعتها قبل انتهاء الوقت');}});
-  const finish=async(force=false)=>{if(finished)return;saveVisibleAnswer();const firstMissing=qs.findIndex((q,i)=>String(draft.answers[String(i)]??'').trim()==='');if(firstMissing>=0&&!force){current=firstMissing;renderCurrent();return toast(`أجب عن السؤال ${firstMissing+1} قبل التسليم`);}if(!force&&!confirm('هل أنت متأكد من تسليم الامتحان؟ لن تستطيع تعديل الإجابات بعد التسليم.'))return;finished=true;clearInterval(timer);submit.disabled=true;submit.classList.add('is-loading');try{const result=await submitExamAttempt(draft.sessionId,st,draft.answers);clearExamDraft(examId,studentCode);overlay.classList.remove('show');document.body.classList.remove('exam-open');currentExamStudent.examAttempts=[...(currentExamStudent.examAttempts||[]),result];renderExamPortal(currentExamStudent,currentSecureExams);}catch(err){finished=false;submit.disabled=false;submit.classList.remove('is-loading');toast(firebaseFriendlyError(err,'تعذر تسليم الامتحان. إجاباتك ما زالت محفوظة.'));}};
+  const finish=async(force=false)=>{if(finished)return;saveVisibleAnswer();const firstMissing=qs.findIndex((q,i)=>String(draft.answers[String(i)]??'').trim()==='');if(firstMissing>=0&&!force){current=firstMissing;renderCurrent();return toast(`أجب عن السؤال ${firstMissing+1} قبل التسليم`);}if(!force&&!confirm('هل أنت متأكد من تسليم الامتحان؟ لن تستطيع تعديل الإجابات بعد التسليم.'))return;finished=true;clearInterval(timer);submit.disabled=true;submit.classList.add('is-loading');try{const result=await submitExamAttempt(draft.sessionId,st,draft.answers);clearExamDraft(examId,studentCode);submit.classList.remove('is-loading');submit.textContent='تم التسليم بنجاح';overlay.classList.remove('show');document.body.classList.remove('exam-open');currentExamStudent.examAttempts=[...(currentExamStudent.examAttempts||[]),result];requestAnimationFrame(()=>setTimeout(()=>renderExamPortal(currentExamStudent,currentSecureExams),0));}catch(err){finished=false;submit.disabled=false;submit.classList.remove('is-loading');toast(firebaseFriendlyError(err,'تعذر تسليم الامتحان. إجاباتك ما زالت محفوظة.'));}};
   form.addEventListener('submit',e=>{e.preventDefault();finish(false);});
   const updateTimer=()=>{const left=Math.max(0,Number(draft.expiresAt)-Date.now());const total=Math.ceil(left/1000),m=Math.floor(total/60),sec=total%60;const timerEl=box.querySelector('#examTimer b');if(timerEl)timerEl.textContent=`${m}:${String(sec).padStart(2,'0')}`;box.querySelector('#examTimer')?.classList.toggle('danger',total<=60);if(left<=0)finish(true);};
   timer=setInterval(updateTimer,1000);updateTimer();renderCurrent();
@@ -1197,7 +1201,7 @@ function registerServiceWorker(){
       registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed'&&navigator.serviceWorker.controller)worker.postMessage({type:'SKIP_WAITING'});});});
     }catch(_){ }
   });
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{try{if(sessionStorage.getItem('mf_sw_reloaded_v6911'))return;sessionStorage.setItem('mf_sw_reloaded_v6911','1');location.reload();}catch(_){ }});
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{try{if(sessionStorage.getItem('mf_sw_reloaded_v6921'))return;sessionStorage.setItem('mf_sw_reloaded_v6921','1');location.reload();}catch(_){ }});
 }
 function setupPWAInstall(){
   const button=document.getElementById('installAppButton');if(!button)return;let installPrompt=null;
