@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '69.2.2';
+const release = '69.2.3';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -106,7 +106,9 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
 // Produce one stylesheet and one script per surface. This preserves the proven
 // execution order while removing the many render-blocking version requests.
 const cssParts = ['site.css','v55.css','v56.css','v57.css','v59.css','v60.css','v61.css','v64-mobile.css'];
-const adminCssParts = ['site.css','v61.css','v64-mobile.css'];
+// The admin surface depends on legacy component rules from every stylesheet.
+// Keep the complete CSS bundle here; data and listeners remain lazy-loaded.
+const adminCssParts = cssParts;
 const publicJsParts = ['app.js','v53-upgrades.js','v56-fixes.js','v61-ui.js'];
 const adminJsParts = ['app.js','admin.js','v56-fixes.js','v61-ui.js'];
 const joinAssets = (items, output) => fs.writeFileSync(

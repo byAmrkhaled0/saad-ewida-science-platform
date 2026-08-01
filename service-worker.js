@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6922-admin-performance";
+const CACHE_NAME = "mf-science-v6923-admin-style-hotfix";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
