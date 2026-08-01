@@ -17,6 +17,8 @@ let examAttemptsListenerReady = false;
 let adminRecordsLoadToken = 0;
 let adminSessionBootPromise = null;
 let adminBootedUid = '';
+let adminRecordsLoaded = false;
+let adminRecordsLoadPromise = null;
 const bookingActionPending = new Set();
 const acceptedBookingCodes = new Set();
 const classProgressActionPending = new Set();
@@ -190,8 +192,6 @@ async function reloadFromCloud(){
   if(!window.MFCloud?.loadSiteData) return;
   const data = await window.MFCloud.loadSiteData({fast:true});
   if(data){ adminData = mergeData(data); saveData(adminData); }
-  const token=++adminRecordsLoadToken;
-  setTimeout(()=>hydrateAdminRecords(token),80);
 }
 
 async function hydrateAdminRecords(token){
@@ -208,11 +208,21 @@ async function hydrateAdminRecords(token){
     (records.homeworks||[]).forEach(row=>{const student=getStudent(row.studentCode);if(student)student.homeworks.push(row);});
     students.forEach(student=>{student.attendance.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));student.grades.sort((a,b)=>String(a.date||a.submittedAt||'').localeCompare(String(b.date||b.submittedAt||'')));});
     adminData.students=students;adminData.examAttempts=records.attempts||[];adminData.grades=records.grades||[];
+    adminRecordsLoaded=true;
     saveData(adminData);
     const focused=document.activeElement?.matches?.('input,textarea,select');
     const recordDrivenSection=['attendance','warnings','studentRequests','exams'].includes(currentSection);
     if(document.querySelector('.admin-page')&&(!focused||recordDrivenSection)&&!document.querySelector('[role="dialog"],.correction-modal-v40'))renderSection();
   }catch(error){console.warn('admin-records-background-load',error);}
+}
+
+const adminRecordSections=new Set(['attendance','warnings','studentRequests','payments','exams','reports']);
+async function ensureAdminRecords(){
+  if(adminRecordsLoaded)return true;
+  if(adminRecordsLoadPromise)return adminRecordsLoadPromise;
+  const token=++adminRecordsLoadToken;
+  adminRecordsLoadPromise=hydrateAdminRecords(token).then(()=>adminRecordsLoaded).finally(()=>{adminRecordsLoadPromise=null;});
+  return adminRecordsLoadPromise;
 }
 
 function unauthorized(message='غير مصرح لك بالدخول.'){
@@ -319,12 +329,19 @@ function syncAdminChrome(){
   const label=document.getElementById('adminCurrentSectionLabel');
   if(label) label.textContent=adminSectionName(currentSection);
 }
-window.goAdminSection=function(id){
+window.goAdminSection=async function(id){
   if(!canOpenAdminSection(id))return aToast('الحساب لا يملك صلاحية فتح هذا القسم');
   if(!adminSections.some(([sectionId])=>sectionId===id))return;
   currentSection=id;
   syncAdminChrome();
   setAdminDrawer(false);
+  if(adminRecordSections.has(id)&&!adminRecordsLoaded){
+    content('<div class="card empty-state admin-loading-state"><span class="admin-loading-spinner" aria-hidden="true"></span><h3>جارٍ تحميل بيانات القسم…</h3><p>يتم تحميل السجلات المطلوبة لهذا القسم فقط.</p></div>');
+    await ensureAdminRecords();
+    if(currentSection!==id)return;
+  }
+  if(id==='bookings')startBookingNotifications();
+  if(id==='exams')startExamAttemptUpdates();
   renderSection();
   window.scrollTo({top:0,behavior:'smooth'});
 };
@@ -381,11 +398,19 @@ function renderAdmin(){
   renderSection();
   syncAdminChrome();
   hydrateIcons();
-  startBookingNotifications();
-  startExamAttemptUpdates();
+  // Real-time listeners start only when their section is opened (or when the
+  // teacher explicitly enables notifications). This keeps the dashboard's
+  // first load light and avoids reading hundreds of exam attempts up front.
+  if(currentSection==='bookings')startBookingNotifications();
+  if(currentSection==='exams')startExamAttemptUpdates();
 }
 
-window.enableBookingNotifications=async function(){if(!('Notification' in window))return aToast('المتصفح لا يدعم إشعارات الهاتف');const permission=await Notification.requestPermission();if(permission!=='granted')return aToast('اسمح بالإشعارات من إعدادات المتصفح');localStorage.setItem('mf-booking-notifications','1');startBookingNotifications();try{await window.MFCloud?.registerTeacherPushToken?.();aToast('تم تفعيل التنبيهات حتى عند إغلاق اللوحة');}catch(error){aToast('تم تفعيل تنبيهات الحجوزات أثناء فتح لوحة الإدارة');}};
+async function ensureFirebaseMessaging(){
+  if(firebase.messaging)return true;
+  await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js';script.onload=resolve;script.onerror=()=>reject(new Error('MESSAGING_LOAD_FAILED'));document.head.appendChild(script);});
+  return typeof firebase.messaging==='function';
+}
+window.enableBookingNotifications=async function(){if(!('Notification' in window))return aToast('المتصفح لا يدعم إشعارات الهاتف');const permission=await Notification.requestPermission();if(permission!=='granted')return aToast('اسمح بالإشعارات من إعدادات المتصفح');localStorage.setItem('mf-booking-notifications','1');startBookingNotifications();try{await ensureFirebaseMessaging();await window.MFCloud?.registerTeacherPushToken?.();aToast('تم تفعيل التنبيهات حتى عند إغلاق اللوحة');}catch(error){aToast('تم تفعيل تنبيهات الحجوزات أثناء فتح لوحة الإدارة');}};
 function startBookingNotifications(){if(bookingNotificationUnsubscribe||!window.MFCloud?.subscribeToBookings)return;bookingNotificationUnsubscribe=window.MFCloud.subscribeToBookings((rows,changes)=>{adminData.bookings=rows.filter(isPendingBooking);saveData(adminData);if(bookingListenerReady){changes.filter(change=>change.type==='added').forEach(change=>{const b={...change.doc.data(),id:change.doc.id,firestoreId:change.doc.id};const code=bookingKey(b);if(!isPendingBooking(b))return;aToast(`حجز جديد: ${b.name||b.studentName||'طالب جديد'}`);if(Notification.permission==='granted'&&localStorage.getItem('mf-booking-notifications')==='1'){const n=new Notification('حجز طالب جديد',{body:`${b.name||b.studentName||''} · ${b.grade||''} · ${b.group||''}`,icon:'assets/icon-192.png',tag:`booking-${code}`});n.onclick=()=>{window.focus();goAdminSection('bookings');};}});}bookingListenerReady=true;if(currentSection==='bookings'&&!bookingActionPending.size)renderBookings();});}
 function startExamAttemptUpdates(){if(examAttemptsUnsubscribe||!window.MFCloud?.subscribeToExamAttempts)return;examAttemptsUnsubscribe=window.MFCloud.subscribeToExamAttempts((rows,changes=[])=>{adminData.examAttempts=rows;if(examAttemptsListenerReady){const added=changes.filter(change=>change.type==='added');if(added.length){const item=added[0].doc.data();aToast(`نتيجة جديدة: ${item.studentName||item.studentCode||'طالب'} — ${examAttemptScoreText(item)}`);}}examAttemptsListenerReady=true;if(currentSection==='exams'&&!document.querySelector('.correction-modal-v40'))renderSection();});}
 

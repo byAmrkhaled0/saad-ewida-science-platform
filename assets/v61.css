@@ -33,6 +33,7 @@ body.admin-dashboard-active .admin-section>.section-head>div:first-child{min-wid
 body.admin-dashboard-active .admin-section>.section-head .kicker{padding:4px 8px!important;margin:0 0 5px!important;font-size:.68rem!important}
 body.admin-dashboard-active .admin-section>.section-head .section-title{font-size:1.28rem!important;line-height:1.35!important;margin:0!important}
 body.admin-dashboard-active .admin-section>.section-head .section-desc{font-size:.78rem!important;line-height:1.55!important;margin:3px 0 0!important;max-width:none!important}
+.admin-loading-state{min-height:220px;display:grid;place-items:center;align-content:center;gap:10px;text-align:center}.admin-loading-state h3,.admin-loading-state p{margin:0}.admin-loading-spinner{width:34px;height:34px;border:4px solid color-mix(in srgb,var(--primary) 18%,transparent);border-top-color:var(--primary);border-radius:50%;animation:admin-loading-spin .75s linear infinite}@keyframes admin-loading-spin{to{transform:rotate(360deg)}}
 body.admin-dashboard-active .student-filter-bar,
 body.admin-dashboard-active .attendance-control-card,
 body.admin-dashboard-active .attendance-summary-card,

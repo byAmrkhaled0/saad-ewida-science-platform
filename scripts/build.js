@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '69.2.1';
+const release = '69.2.2';
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -106,6 +106,7 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
 // Produce one stylesheet and one script per surface. This preserves the proven
 // execution order while removing the many render-blocking version requests.
 const cssParts = ['site.css','v55.css','v56.css','v57.css','v59.css','v60.css','v61.css','v64-mobile.css'];
+const adminCssParts = ['site.css','v61.css','v64-mobile.css'];
 const publicJsParts = ['app.js','v53-upgrades.js','v56-fixes.js','v61-ui.js'];
 const adminJsParts = ['app.js','admin.js','v56-fixes.js','v61-ui.js'];
 const joinAssets = (items, output) => fs.writeFileSync(
@@ -113,6 +114,7 @@ const joinAssets = (items, output) => fs.writeFileSync(
   items.map(name => fs.readFileSync(path.join(root, 'assets', name), 'utf8')).join('\n;\n')
 );
 joinAssets(cssParts, 'platform.css');
+joinAssets(adminCssParts, 'admin-platform.css');
 joinAssets(publicJsParts, 'platform.js');
 joinAssets(adminJsParts, 'admin-platform.js');
 // Files superseded by the production bundles or not referenced by any page are
@@ -131,12 +133,13 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   html = html.replace(/(?:<link[^>]+href=["']\/?assets\/(?:site|v55|v56|v57|v59|v60|v61|v64-mobile)\.css[^>]*>\s*)+/gi, `<link rel="stylesheet" href="assets/platform.css?v=${release}">\n`);
   html = html.replace(/(?:<script defer src=["']\/?assets\/(?:app|v53-upgrades|v56-fixes)\.js[^>]*><\/script>\s*)+/gi, `<script defer src="assets/platform.js?v=${release}"></script>\n`);
   if (file === 'teacher-login.html') {
+    html = html.replace(/<link rel="stylesheet" href="assets\/platform\.css\?v=[^"]+">/g, `<link rel="stylesheet" href="assets/admin-platform.css?v=${release}">`);
     html = html.replace(/<script defer src=["']assets\/(?:platform|app|admin|v53-upgrades|v55-admin|v56-fixes|v59-admin|v60-admin)\.js[^>]*><\/script>\s*/gi, '');
     html = html.replace('</body>', `<script defer src="assets/admin-platform.js?v=${release}"></script>\n</body>`);
   }
   const publicBundleTag = `<script defer src="assets/platform.js?v=${release}"></script>`;
   const adminBundleTag = `<script defer src="assets/admin-platform.js?v=${release}"></script>`;
-  const cssBundlePattern = /<link rel="stylesheet" href="assets\/platform\.css\?v=[^"]+">\s*/g;
+  const cssBundlePattern = /<link rel="stylesheet" href="assets\/(?:admin-)?platform\.css\?v=[^"]+">\s*/g;
   let cssSeen = false, publicSeen = false, adminSeen = false;
   html = html.replace(cssBundlePattern, match => cssSeen ? '' : (cssSeen = true, match));
   html = html.replace(new RegExp(publicBundleTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), match => publicSeen ? '' : (publicSeen = true, match));
@@ -173,7 +176,7 @@ for (const file of builtPages) {
   }
   const publicBundles = (html.match(/assets\/platform\.js/g) || []).length;
   const adminBundles = (html.match(/assets\/admin-platform\.js/g) || []).length;
-  const cssBundles = (html.match(/assets\/platform\.css/g) || []).length;
+  const cssBundles = (html.match(/assets\/(?:admin-)?platform\.css/g) || []).length;
   if (cssBundles !== 1) buildReferenceErrors.push(`${file}: invalid stylesheet bundle count`);
   if (file === 'teacher-login.html') {
     if (publicBundles !== 0 || adminBundles !== 1) buildReferenceErrors.push(`${file}: invalid admin bundle count`);
