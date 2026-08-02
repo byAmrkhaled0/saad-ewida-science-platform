@@ -17,4 +17,12 @@ function getExamScheduleState(exam,now=Date.now()){
   if(close.present&&current>=close.ms)return {state:'closed',reason:'after-close',openAtMs:open.ms,closeAtMs:close.ms};
   return {state:'open',reason:'within-window',openAtMs:open.ms,closeAtMs:close.ms};
 }
-module.exports={scheduleTime,getExamScheduleState};
+function examSessionDeadline(exam,startedAtMs,now=Date.now()){
+  const durationMinutes=Math.max(1,Math.min(240,Number(exam?.duration||20)));
+  const schedule=getExamScheduleState(exam,now);
+  const durationDeadline=Number(startedAtMs)+durationMinutes*60*1000;
+  let expiresAtMs=schedule.closeAtMs?Math.min(durationDeadline,schedule.closeAtMs):durationDeadline;
+  if(exam?.active===false||schedule.reason==='invalid-schedule')expiresAtMs=Math.min(expiresAtMs,now);
+  return {durationMinutes,expiresAtMs,schedule};
+}
+module.exports={scheduleTime,getExamScheduleState,examSessionDeadline};

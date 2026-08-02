@@ -163,6 +163,9 @@ service cloud.firestore {
     match /deleted_students/{id} { allow read, write: if false; }
     match /backup_runs/{id} { allow read, write: if false; }
     match /staff_push_tokens/{id} { allow read, write: if false; }
+    match /student_push_tokens/{id} { allow read, write: if false; }
+    match /exam_versions/{examId} { allow read, write: if false; }
+    match /exam_versions/{examId}/versions/{versionId} { allow read, write: if false; }
     match /{document=**} { allow read, write: if false; }
   }
 }

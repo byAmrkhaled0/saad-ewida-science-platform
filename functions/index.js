@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const admin = require('firebase-admin');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2/options');
 
@@ -17,7 +17,7 @@ const Timestamp = admin.firestore.Timestamp;
 const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
 const { positiveScore, assignQuestionScores, scoreSummary } = require('./lib/exam-scoring');
-const { getExamScheduleState } = require('./lib/exam-schedule');
+const { getExamScheduleState, examSessionDeadline } = require('./lib/exam-schedule');
 const { normalizeStudentName, studentNameIdentity, hasAtLeastThreeNameParts } = require('./lib/student-name');
 const {
   scheduledTimeMillis,
@@ -25,7 +25,7 @@ const {
   assignmentDueDatePassed,
   assignmentSubmissionIsOpen
 } = require('./lib/assignment-schedule');
-const BACKEND_RELEASE = '69.2.0';
+const BACKEND_RELEASE = '69.2.4';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -35,7 +35,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '69-2-0' }
+  labels: { 'platform-release': '69-2-4' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -43,18 +43,18 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '69-2-0' }
+  labels: { 'platform-release': '69-2-4' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
   'getPublicLeaderboard', 'createAttendanceSession', 'claimAttendanceSession', 'createStudentAccess',
   'createBooking', 'approveBooking', 'getBookingStatus', 'rejectBooking', 'createReview',
-  'recordClassProgress', 'getExamDashboard', 'startExam', 'submitExam', 'prepareHomeworkUpload',
+  'recordClassProgress', 'getExamDashboard', 'startExam', 'syncExamSession', 'submitExam', 'prepareHomeworkUpload',
   'registerHomeworkSubmission', 'reportClientError', 'createBackupNow', 'listAutomaticBackups',
-  'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely', 'registerTeacherPushToken',
+  'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely', 'registerTeacherPushToken', 'registerStudentPushToken',
   'listStaffAccounts', 'upsertStaffAccount', 'setStaffAccountState',
   'createStudentTransferRequest', 'reviewStudentTransferRequest', 'saveGroupSchedule', 'deleteGroupSchedule'
-  , 'uploadBookingReceipt', 'reviewBookingReceipt'
+  , 'uploadBookingReceipt', 'reviewBookingReceipt', 'listExamVersions', 'restoreExamVersion', 'getPlatformHealth'
 ]);
 
 function cleanDocId(value) {
@@ -349,6 +349,102 @@ exports.registerTeacherPushToken = onCall(CALLABLE_OPTIONS, async request => {
   const tokenId = hash(token).slice(0, 48);
   await db.collection('staff_push_tokens').doc(tokenId).set({ token, uid: staff.uid, role: staff.role || '', active: true, userAgent: text(request.data?.userAgent, 250), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { registered: true };
+});
+
+exports.registerStudentPushToken = onCall(CALLABLE_OPTIONS, async request => {
+  const studentCode = normalizeCode(request.data?.studentCode);
+  const token = text(request.data?.token, 500);
+  await rateLimitPublic('student-push-token', studentCode, request, 5, 12, 60 * 60 * 1000);
+  if (token.length < 40) throw new HttpsError('invalid-argument', 'رمز الإشعارات غير صالح.');
+  const found = await getStudentPortalByCode(studentCode);
+  const student = found.data || {};
+  const tokenId = hash(token).slice(0, 48);
+  await db.collection('student_push_tokens').doc(tokenId).set({
+    token, studentCode,
+    grade:text(student.grade,80), group:text(student.group,100), scheduleId:text(student.scheduleId,100),
+    deliveryMode:student.deliveryMode==='online'?'online':'center', academicYear:text(student.academicYear,20), term:text(student.term,40),
+    active:true, userAgent:text(request.data?.userAgent,250), updatedAt:FieldValue.serverTimestamp()
+  }, { merge:true });
+  return { registered:true };
+});
+
+async function deactivateInvalidPushTokens(collection, docs, tokens, response) {
+  const invalid=[];
+  response.responses.forEach((item,index)=>{if(!item.success&&/registration-token-not-registered|invalid-registration-token/.test(String(item.error?.code||'')))invalid.push(tokens[index]);});
+  if(!invalid.length)return;
+  const batch=db.batch();docs.filter(doc=>invalid.includes(doc.data().token)).forEach(doc=>batch.set(collection.doc(doc.id),{active:false,updatedAt:FieldValue.serverTimestamp()},{merge:true}));await batch.commit();
+}
+
+async function notifyTargetedStudents(item,{type,title,body,url}) {
+  const tokenCollection=db.collection('student_push_tokens');
+  const snap=await tokenCollection.where('active','==',true).limit(5000).get();
+  const docs=snap.docs.filter(doc=>learningTargetMatchesStudent(item,doc.data()));
+  if(!docs.length)return { sent:0 };
+  let sent=0;
+  for(let index=0;index<docs.length;index+=500){
+    const chunkDocs=docs.slice(index,index+500),tokens=chunkDocs.map(doc=>doc.data().token).filter(Boolean);
+    if(!tokens.length)continue;
+    const response=await admin.messaging().sendEachForMulticast({tokens,data:{type,title,body,url},webpush:{notification:{title,body,icon:'https://saad-ewida-science-platform.vercel.app/assets/icon-192.png',badge:'https://saad-ewida-science-platform.vercel.app/assets/icon-192.png',tag:`${type}-${text(item.id,100)}`,renotify:true},fcmOptions:{link:url}}});
+    sent+=response.successCount;await deactivateInvalidPushTokens(tokenCollection,chunkDocs,tokens,response);
+  }
+  return { sent };
+}
+
+function contentNotification(before,after,typeLabel,url,type) {
+  if(!after||after.active===false)return null;
+  const action=!before||before.active===false?'تم نشر':'تم تعديل';
+  return {type,title:`${action} ${typeLabel}`,body:text(after.title||typeLabel,180),url};
+}
+
+exports.notifyStudentsOnExamUpdated = onDocumentWritten({document:'exams/{examId}',region:'europe-west1',memory:'256MiB'},async event=>{
+  const before=event.data?.before.data(),afterData=event.data?.after.data();if(!afterData)return;
+  const after={id:event.params.examId,...afterData},notice=contentNotification(before,after,'امتحان','https://saad-ewida-science-platform.vercel.app/exams.html','exam');
+  if(notice)await notifyTargetedStudents(after,notice);
+});
+exports.notifyStudentsOnAssignmentUpdated = onDocumentWritten({document:'assignments/{assignmentId}',region:'europe-west1',memory:'256MiB'},async event=>{
+  const before=event.data?.before.data(),afterData=event.data?.after.data();if(!afterData)return;
+  const after={id:event.params.assignmentId,...afterData},notice=contentNotification(before,after,'واجب','https://saad-ewida-science-platform.vercel.app/student.html','assignment');
+  if(notice)await notifyTargetedStudents(after,notice);
+});
+exports.notifyStudentsOnLectureUpdated = onDocumentWritten({document:'materials/{materialId}',region:'europe-west1',memory:'256MiB'},async event=>{
+  const before=event.data?.before.data(),afterData=event.data?.after.data();if(!afterData)return;
+  const after={id:event.params.materialId,...afterData};
+  if(after.deliveryMode!=='online'||!['live','upcoming','recording','file'].includes(after.contentType))return;
+  const notice=contentNotification(before,after,'محاضرة','https://saad-ewida-science-platform.vercel.app/online.html','lecture');if(notice)await notifyTargetedStudents(after,notice);
+});
+
+exports.archiveExamVersion = onDocumentUpdated({document:'exams/{examId}',region:'europe-west1',memory:'256MiB'},async event=>{
+  const before=event.data?.before.data();if(!before)return;
+  const versionId=cleanDocId(`${Date.now()}_${text(event.id,80)}`);
+  await db.collection('exam_versions').doc(event.params.examId).collection('versions').doc(versionId).set({
+    examId:event.params.examId,title:text(before.title,200),snapshot:before,source:'before-update',createdAt:FieldValue.serverTimestamp()
+  });
+});
+
+exports.listExamVersions = onCall(CALLABLE_OPTIONS, async request=>{
+  await requireStaff(request,['admin','teacher']);const examId=cleanDocId(request.data?.examId);if(!examId)throw new HttpsError('invalid-argument','الامتحان غير صالح.');
+  const snap=await db.collection('exam_versions').doc(examId).collection('versions').orderBy('createdAt','desc').limit(30).get();
+  return snap.docs.map(doc=>{const data=doc.data()||{};return {id:doc.id,examId,title:text(data.title,200),createdAt:data.createdAt?.toDate?.().toISOString()||''};});
+});
+
+exports.restoreExamVersion = onCall(CALLABLE_OPTIONS, async request=>{
+  const staff=await requireStaff(request,['admin','teacher']),examId=cleanDocId(request.data?.examId),versionId=cleanDocId(request.data?.versionId);
+  if(!examId||!versionId)throw new HttpsError('invalid-argument','اختر نسخة صالحة للاستعادة.');
+  const versionSnap=await db.collection('exam_versions').doc(examId).collection('versions').doc(versionId).get();
+  if(!versionSnap.exists)throw new HttpsError('not-found','النسخة المطلوبة غير موجودة.');
+  const snapshot=versionSnap.data()?.snapshot;if(!snapshot||typeof snapshot!=='object')throw new HttpsError('failed-precondition','بيانات النسخة غير مكتملة.');
+  await db.collection('exams').doc(examId).set({...snapshot,id:examId,restoredFromVersion:versionId,restoredBy:staff.email||staff.uid,restoredAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  return {ok:true,examId,versionId};
+});
+
+exports.getPlatformHealth = onCall(CALLABLE_OPTIONS, async request=>{
+  await requireStaff(request);const checkedAt=new Date().toISOString();
+  const status={functions:{ok:true,release:BACKEND_RELEASE},database:{ok:false},storage:{ok:false},notifications:{ok:false,teacherTokens:0,studentTokens:0},lastPublished:{frontend:'69.2.4',backend:BACKEND_RELEASE}};
+  try{await db.collection('settings').doc('platform').get();status.database={ok:true};}catch(error){status.database={ok:false,message:text(error.message,180)};}
+  try{const [metadata]=await admin.storage().bucket().getMetadata();status.storage={ok:true,bucket:text(metadata.name,180)};}catch(error){status.storage={ok:false,message:text(error.message,180)};}
+  try{const [teacherTokens,studentTokens]=await Promise.all([db.collection('staff_push_tokens').where('active','==',true).count().get(),db.collection('student_push_tokens').where('active','==',true).count().get()]);status.notifications={ok:true,teacherTokens:teacherTokens.data().count,studentTokens:studentTokens.data().count};}catch(error){status.notifications={ok:false,message:text(error.message,180),teacherTokens:0,studentTokens:0};}
+  let errors=[];try{const snap=await db.collection('client_errors').orderBy('createdAt','desc').limit(25).get();errors=snap.docs.map(doc=>{const row=doc.data()||{};return {id:doc.id,message:text(row.message,500),page:text(row.page,500),createdAt:row.createdAt?.toDate?.().toISOString()||'',userAgent:text(row.userAgent,250)};});}catch(error){}
+  return {checkedAt,status,errors};
 });
 
 // Push delivery runs independently from the public booking request. The
@@ -1922,10 +2018,10 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
   if (!questions.length) throw new HttpsError('failed-precondition', 'الامتحان لا يحتوي على أسئلة صالحة.');
   if (questions.length > 200) throw new HttpsError('failed-precondition', 'عدد أسئلة الامتحان أكبر من الحد المسموح.');
 
-  const durationMinutes = Math.max(1, Math.min(240, Number(exam.duration || 20)));
   const now = Date.now();
-  const schedule=getExamScheduleState(exam,now);
-  const sessionDeadline=schedule.closeAtMs?Math.min(now+durationMinutes*60*1000,schedule.closeAtMs):now+durationMinutes*60*1000;
+  const initialTiming=examSessionDeadline(exam,now,now);
+  const durationMinutes=initialTiming.durationMinutes;
+  const sessionDeadline=initialTiming.expiresAtMs;
   const sessionId = cleanDocId(`${examId}_${studentCode}`);
   const sessionRef = db.collection('exam_sessions').doc(sessionId);
   const lockRef = db.collection('exam_locks').doc(sessionId);
@@ -1938,13 +2034,32 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
     if (existingSessionSnap.exists) {
       const existing = existingSessionSnap.data();
       const existingExpiresAt = existing.expiresAt?.toMillis ? existing.expiresAt.toMillis() : 0;
+      const existingStartedAt = existing.startedAt?.toMillis ? existing.startedAt.toMillis() : now;
+      const revisedTiming = examSessionDeadline(exam, existingStartedAt, now);
       if (existing.status === 'submitted' && exam.allowRetake !== true) {
         throw new HttpsError('already-exists', 'تم تسليم الامتحان بالفعل.');
       }
-      if (existing.status === 'started' && existingExpiresAt > now) {
+      if (existing.status === 'started' && revisedTiming.expiresAtMs > now) {
+        const timingChanged = existingExpiresAt !== revisedTiming.expiresAtMs || Number(existing.duration || 0) !== revisedTiming.durationMinutes;
+        if (timingChanged) {
+          const updated = {
+            ...existing,
+            duration: revisedTiming.durationMinutes,
+            expiresAt: Timestamp.fromMillis(revisedTiming.expiresAtMs),
+            examTimingSyncedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp()
+          };
+          tx.set(sessionRef, {
+            duration: updated.duration,
+            expiresAt: updated.expiresAt,
+            examTimingSyncedAt: updated.examTimingSyncedAt,
+            updatedAt: updated.updatedAt
+          }, { merge:true });
+          return updated;
+        }
         return existing;
       }
-      if (existing.status === 'started' && existingExpiresAt <= now && exam.allowRetake !== true) {
+      if (existing.status === 'started' && revisedTiming.expiresAtMs <= now && exam.allowRetake !== true) {
         throw new HttpsError('deadline-exceeded', 'انتهى وقت الامتحان ولا يمكن بدء الوقت من جديد. راجع المدرس.');
       }
     }
@@ -1997,6 +2112,44 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
     pdfName: sessionData.pdfName || exam.pdfName || exam.examPdfName
     ,maxScore: sessionData.maxScore||exam.maxScore
   }, snapshotQuestions, startedAtMs, expiresAtMs);
+});
+
+exports.syncExamSession = onCall(CALLABLE_OPTIONS, async request => {
+  const sessionId = cleanDocId(request.data && request.data.sessionId);
+  const studentCode = normalizeCode(request.data && request.data.studentCode);
+  if (!sessionId || !validLegacyOrStrongCode(studentCode)) throw new HttpsError('invalid-argument', 'بيانات جلسة الامتحان غير مكتملة.');
+  await rateLimitPublic('exam-session-sync', `${studentCode}:${sessionId}`, request, 30, 90, 60 * 1000);
+  const sessionRef = db.collection('exam_sessions').doc(sessionId);
+  const sessionSnap = await sessionRef.get();
+  if (!sessionSnap.exists) throw new HttpsError('not-found', 'جلسة الامتحان غير موجودة.');
+  const session = sessionSnap.data() || {};
+  if (normalizeCode(session.studentCode) !== studentCode) throw new HttpsError('permission-denied', 'كود الطالب لا يطابق جلسة الامتحان.');
+  const serverNow = Date.now();
+  if (session.status !== 'started') {
+    return { status:text(session.status,30)||'submitted', serverNow, expiresAt:session.expiresAt?.toMillis?.()||0 };
+  }
+  const examSnap = await db.collection('exams').doc(cleanDocId(session.examId)).get();
+  if (!examSnap.exists) throw new HttpsError('not-found', 'الامتحان لم يعد موجودًا.');
+  const exam = { id:examSnap.id, ...examSnap.data() };
+  const startedAtMs = session.startedAt?.toMillis?.() || serverNow;
+  const timing = examSessionDeadline(exam, startedAtMs, serverNow);
+  const previousExpiresAt = session.expiresAt?.toMillis?.() || 0;
+  if (previousExpiresAt !== timing.expiresAtMs || Number(session.duration || 0) !== timing.durationMinutes) {
+    await sessionRef.set({
+      duration:timing.durationMinutes,
+      expiresAt:Timestamp.fromMillis(timing.expiresAtMs),
+      examTimingSyncedAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp()
+    }, { merge:true });
+  }
+  return {
+    status:'started',
+    duration:timing.durationMinutes,
+    expiresAt:timing.expiresAtMs,
+    serverNow,
+    scheduleState:timing.schedule.state,
+    changed:previousExpiresAt !== timing.expiresAtMs
+  };
 });
 
 exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {

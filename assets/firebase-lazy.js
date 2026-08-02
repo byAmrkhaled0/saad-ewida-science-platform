@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var release=(document.currentScript&&document.currentScript.dataset.version)||'69.2.1';
+  var release=(document.currentScript&&document.currentScript.dataset.version)||'69.2.4';
   var promise=null;
   function load(src){
     return new Promise(function(resolve,reject){
@@ -17,12 +17,12 @@
     if(promise)return promise;
     promise=(async function(){
       await load('assets/firebase-config.js?v='+release);
-      await load('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
+      await load('assets/vendor/firebase-app-compat.js?v='+release);
       await Promise.all([
-        load('https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js'),
-        load('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js'),
-        load('https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js'),
-        load('https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js')
+        load('assets/vendor/firebase-auth-compat.js?v='+release),
+        load('assets/vendor/firebase-firestore-compat.js?v='+release),
+        load('assets/vendor/firebase-storage-compat.js?v='+release),
+        load('assets/vendor/firebase-functions-compat.js?v='+release)
       ]);
       await load('assets/firebase-sync.js?v='+release);
       window.dispatchEvent(new CustomEvent('mfcloudready'));

@@ -48,7 +48,7 @@ for (const entry of entriesToCopy) {
 }
 
 const siteUrl = 'https://saad-ewida-science-platform.vercel.app';
-const release = '69.2.3';
+const release = require(path.join(root, 'package.json')).version;
 const seoPages = {
   'index.html': ['مدرس أحياء وعلوم في المنصورة وأونلاين | سعد عويضة', 'المستر سعد عويضة مدرس أحياء وعلوم وعلوم متكاملة في المنصورة وأونلاين لجميع المراحل: شرح حديث، امتحانات، تسجيلات ومتابعة للطالب وولي الأمر.'],
   'services.html': ['مدرس أحياء وعلوم في المنصورة | خدمات سعد عويضة', 'خدمات المستر سعد عويضة لطلاب الأحياء والعلوم والعلوم المتكاملة في المنصورة: شرح حديث، حجز إلكتروني، امتحانات وتقارير متابعة للطالب وولي الأمر.'],
@@ -69,6 +69,12 @@ function escapeAttr(value) {
 for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) {
   const filePath = path.join(dist, file);
   let html = fs.readFileSync(filePath, 'utf8');
+  if (file !== 'index.html') {
+    html = html.replace(
+      /https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.5\/firebase-(app|auth|firestore|storage|functions)-compat\.js/g,
+      'assets/vendor/firebase-$1-compat.js'
+    );
+  }
   const fallbackTitle = (html.match(/<title>([^<]*)<\/title>/i) || [,'منصة المستر سعد عويضة'])[1];
   const existingDescription = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [,'منصة المستر سعد عويضة التعليمية.'])[1];
   const [title, description] = seoPages[file] || [fallbackTitle, existingDescription];

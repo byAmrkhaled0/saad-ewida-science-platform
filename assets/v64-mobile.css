@@ -361,6 +361,10 @@
   }
 }
 
+/* V69.2.4 assignment tracking and resilient QR controls */
+.assignment-tracking-modal .admin-form-modal-card{width:min(1000px,calc(100% - 24px));max-height:92dvh;overflow:auto}.assignment-tracking-metrics{grid-template-columns:repeat(5,minmax(110px,1fr));margin:16px 0}.assignment-tracking-toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center}.assignment-tracking-toolbar select{max-width:260px}.assignment-tracking-list{display:grid;gap:10px;margin-top:14px}.assignment-tracking-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:12px;align-items:center;padding:14px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}.assignment-student-copy{display:grid;gap:3px}.assignment-student-copy small{color:var(--muted);font-weight:700}.assignment-tracking-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.assignment-tracking-actions strong{white-space:nowrap}.qr-source-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+@media(max-width:720px){.assignment-tracking-metrics{grid-template-columns:repeat(2,1fr)}.assignment-tracking-row{grid-template-columns:1fr}.assignment-tracking-actions{justify-content:flex-start}.assignment-tracking-toolbar{align-items:stretch;flex-direction:column}.assignment-tracking-toolbar select{max-width:none}}
+
 /* One stable public header and clean A4 report output. */
 .site-header {
   position: sticky;

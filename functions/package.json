@@ -1,6 +1,6 @@
 {
   "name": "saad-ewida-platform-functions",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "private": true,
   "main": "index.js",
   "engines": {

@@ -2,8 +2,14 @@
   'use strict';
 
   const cfg=window.MF_FIREBASE_CONFIG||{};
-  if(!cfg.enabled||typeof firebase==='undefined'){
+  const firebaseRuntimeReady=typeof firebase!=='undefined'
+    &&typeof firebase.initializeApp==='function'
+    &&typeof firebase.auth==='function'
+    &&typeof firebase.firestore==='function'
+    &&typeof firebase.storage==='function';
+  if(!cfg.enabled||!firebaseRuntimeReady){
     window.MFCloud={ready:false,error:'Firebase غير مفعل'};
+    window.dispatchEvent(new CustomEvent('mfcloudfailed',{detail:{reason:'firebase-runtime-incomplete'}}));
     return;
   }
 
@@ -95,11 +101,13 @@
       approveBooking:callable('approveBooking'),
       rejectBooking:callable('rejectBooking'),
       registerTeacherPushToken:callable('registerTeacherPushToken'),
+      registerStudentPushToken:callable('registerStudentPushToken'),
       getBookingStatus:callable('getBookingStatus'),
       createReview:callable('createReview'),
       recordClassProgress:callable('recordClassProgress'),
       getExamDashboard:callable('getExamDashboard'),
       startExam:callable('startExam'),
+      syncExamSession:callable('syncExamSession'),
       submitExam:callable('submitExam'),
       reportClientError:callable('reportClientError'),
       createStudentAccess:callable('createStudentAccess'),
@@ -110,6 +118,9 @@
       getBackupDownloadUrl:callable('getBackupDownloadUrl'),
       restoreAutomaticBackup:callable('restoreAutomaticBackup'),
       deleteStudentSafely:callable('deleteStudentSafely')
+      ,listExamVersions:callable('listExamVersions')
+      ,restoreExamVersion:callable('restoreExamVersion')
+      ,getPlatformHealth:callable('getPlatformHealth')
       ,listStaffAccounts:callable('listStaffAccounts')
       ,upsertStaffAccount:callable('upsertStaffAccount')
       ,setStaffAccountState:callable('setStaffAccountState')
@@ -679,6 +690,7 @@
         if(!token)throw new Error('TOKEN_UNAVAILABLE');
         return calls.registerTeacherPushToken({token,userAgent:navigator.userAgent});
       },
+      registerStudentPushToken:(studentCode,token)=>{if(!calls.registerStudentPushToken)throw new Error('Student notification service is unavailable');return calls.registerStudentPushToken({studentCode:normalizeCode(studentCode),token:String(token||''),userAgent:navigator.userAgent});},
       listStaffAccounts:()=>calls.listStaffAccounts({}),
       upsertStaffAccount:payload=>calls.upsertStaffAccount(payload),
       setStaffAccountState:(uid,active)=>calls.setStaffAccountState({uid,active}),
@@ -702,7 +714,11 @@
       },
       getExamDashboard:async studentCode=>{if(!calls.getExamDashboard)throw new Error('Secure exam dashboard function is unavailable');return calls.getExamDashboard({studentCode:normalizeCode(studentCode)});},
       startSecureExam:async(examId,studentCode)=>{if(!calls.startExam)throw new Error('Secure start exam function is unavailable');return calls.startExam({examId,studentCode:normalizeCode(studentCode)});},
+      syncSecureExam:async(sessionId,studentCode)=>{if(!calls.syncExamSession)throw new Error('Secure exam sync function is unavailable');return calls.syncExamSession({sessionId,studentCode:normalizeCode(studentCode)});},
       submitSecureExam:async(sessionId,studentCode,answers)=>{if(!calls.submitExam)throw new Error('Secure submit exam function is unavailable');return calls.submitExam({sessionId,studentCode:normalizeCode(studentCode),answers});},
+      listExamVersions:examId=>calls.listExamVersions({examId:cleanDocId(examId)}),
+      restoreExamVersion:(examId,versionId)=>calls.restoreExamVersion({examId:cleanDocId(examId),versionId:cleanDocId(versionId)}),
+      getPlatformHealth:()=>calls.getPlatformHealth({}),
       saveExamAttempt:async attempt=>{
         const profile=await getCurrentStaffProfile();if(!profile?.allowed||!['admin','teacher'].includes(profile.role))throw new Error('Not authorized');
         const id=cleanDocId(attempt.id||`${attempt.examId}_${attempt.studentCode}`),studentCode=normalizeCode(attempt.studentCode||'');const ops=[];

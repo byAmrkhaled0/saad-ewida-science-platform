@@ -392,9 +392,18 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '69.2.3' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.3'") || !read('service-worker.js').includes('mf-science-v6923-admin-style-hotfix') || [...functionsSource.matchAll(/'platform-release': '69-2-0'/g)].length !== 2) fail('V69.2.3 frontend and V69.2.0 backend release identifiers are invalid');
+if (packageInfo.version !== '69.2.4' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.4'") || !read('service-worker.js').includes('mf-science-v6924-live-sync-qr') || [...functionsSource.matchAll(/'platform-release': '69-2-4'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '69.2.4'")) fail('V69.2.4 frontend/backend release identifiers are invalid');
 if (!read('assets/v56-fixes.js').includes('saadExamFilterV6921') || !read('assets/v56-fixes.js').includes('saadExamGroupV6921') || !read('assets/v56-fixes.js').includes("_attendance:'missing'")) fail('V69.2.1 exam attendance filters are incomplete');
-if (!adminSourceCode.includes('adminRecordSections') || !adminSourceCode.includes('ensureAdminRecords') || !read('scripts/build.js').includes('const adminCssParts = cssParts')) fail('V69.2.3 lazy admin records or complete admin stylesheet is incomplete');
+if (!adminSourceCode.includes('adminRecordSections') || !adminSourceCode.includes('ensureAdminRecords') || !read('scripts/build.js').includes('const adminCssParts = cssParts')) fail('V69.2.4 lazy admin records or complete admin stylesheet is incomplete');
+for (const vendor of ['app','auth','firestore','storage','functions','messaging']) {
+  if (!fs.existsSync(path.join(root,`assets/vendor/firebase-${vendor}-compat.js`))) fail(`Local Firebase ${vendor} compatibility bundle is missing`);
+}
+if (!firebaseSyncSource.includes('syncSecureExam') || !functionsSource.includes('exports.syncExamSession') || !read('assets/app.js').includes('startExamDashboardAutoRefresh')) fail('Live exam duration/dashboard synchronization is incomplete');
+if (read('assets/app.js').includes('studentQrDecoded') || !adminSourceCode.includes('scanAdminQrImage') || !adminSourceCode.includes('renderAttendanceUnifiedV62')) fail('QR camera/gallery recovery is incomplete');
+if (!adminSourceCode.includes('assignmentRosterV6924') || !adminSourceCode.includes('filterAssignmentRosterV6924')) fail('Detailed homework tracking is incomplete');
+if (!functionsSource.includes('notifyStudentsOnExamUpdated') || !functionsSource.includes('registerStudentPushToken') || !read('assets/app.js').includes('enableStudentNotifications')) fail('Student push notification wiring is incomplete');
+if (!functionsSource.includes('archiveExamVersion') || !adminSourceCode.includes('openExamVersionsV6924') || !functionsSource.includes('restoreExamVersion')) fail('Exam version history is incomplete');
+if (!functionsSource.includes('getPlatformHealth') || !adminSourceCode.includes('renderPlatformHealthV6924')) fail('Platform health page is incomplete');
 if (!read('assets/admin.js').includes('رابط YouTube أو البث أو Drive') || !read('assets/online.js').includes('مشاهدة على YouTube')) fail('YouTube course-link workflow is incomplete');
 if (read('assets/firebase-lazy.js').includes('requestIdleCallback') || read('assets/firebase-lazy.js').includes('setTimeout(start')) fail('Firebase must not start automatically during the landing-page performance window');
 if (!read('assets/admin.js').includes('function safeExternalUrl') || !read('assets/online.js').includes('const safeUrl=') || read('assets/admin.js').includes('href="${safe(item.fileUrl)}" target="_blank"')) fail('External content links are not fully URL-sanitized');

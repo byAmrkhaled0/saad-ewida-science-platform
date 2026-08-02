@@ -44,6 +44,7 @@ const adminSections = [
   ['assignments','file-text','الواجبات'],
   ['reviews','star','التقييمات'],
   ['reports','bar-chart','التقارير'],
+  ['health','bar-chart','صحة المنصة'],
   ['staff','users','حسابات المساعدين'],
   ['backup','database','النسخ الاحتياطي'],
   ['settings','sparkles','الإعدادات']
@@ -51,9 +52,9 @@ const adminSections = [
 const adminSectionGroups = [
   ['التشغيل اليومي',['overview','bookings','students','schedules','attendance','warnings','studentRequests','payments']],
   ['التعليم والمحتوى',['exams','assignments','onlineContent','materials','questionBank']],
-  ['الإدارة والمتابعة',['reviews','reports','staff','backup','settings']]
+  ['الإدارة والمتابعة',['reviews','reports','health','staff','backup','settings']]
 ];
-const sectionPermission={overview:'overview',bookings:'bookings',students:'students',schedules:'schedules',attendance:'attendance',warnings:'attendance',studentRequests:'students',payments:'payments',exams:'exams',onlineContent:'content',materials:'content',questionBank:'content',assignments:'assignments',reviews:'reviews',reports:'reports'};
+const sectionPermission={overview:'overview',bookings:'bookings',students:'students',schedules:'schedules',attendance:'attendance',warnings:'attendance',studentRequests:'students',payments:'payments',exams:'exams',onlineContent:'content',materials:'content',questionBank:'content',assignments:'assignments',reviews:'reviews',reports:'reports',health:'overview'};
 function canOpenAdminSection(id){if(id==='staff')return ['admin','teacher'].includes(currentStaff?.role);if(['admin','teacher'].includes(currentStaff?.role))return true;if(id==='backup'||id==='settings')return false;const key=sectionPermission[id]||id;return (currentStaff?.permissions||[]).includes(key);}
 function adminNavMarkup(){return adminSectionGroups.map(([label,ids],index)=>{const allowed=ids.filter(canOpenAdminSection),active=allowed.includes(currentSection),stored=localStorage.getItem(`admin-nav-group-${index}`),open=active||stored!=='closed';return allowed.length?`<details class="admin-nav-group" data-admin-nav-group="${index}" ${open?'open':''}><summary><span>${label}</span><span data-icon="chevron-down"></span></summary><div>${allowed.map(id=>{const section=adminSections.find(item=>item[0]===id);if(!section)return '';const [,icon,name]=section;return `<button type="button" data-admin-nav="${id}" class="${id===currentSection?'active':''}"><span data-icon="${icon}"></span><span>${name}</span></button>`;}).join('')}</div></details>`:'';}).join('');}
 
@@ -216,7 +217,7 @@ async function hydrateAdminRecords(token){
   }catch(error){console.warn('admin-records-background-load',error);}
 }
 
-const adminRecordSections=new Set(['attendance','warnings','studentRequests','payments','exams','reports']);
+const adminRecordSections=new Set(['attendance','warnings','studentRequests','payments','exams','assignments','reports']);
 async function ensureAdminRecords(){
   if(adminRecordsLoaded)return true;
   if(adminRecordsLoadPromise)return adminRecordsLoadPromise;
@@ -407,7 +408,7 @@ function renderAdmin(){
 
 async function ensureFirebaseMessaging(){
   if(firebase.messaging)return true;
-  await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js';script.onload=resolve;script.onerror=()=>reject(new Error('MESSAGING_LOAD_FAILED'));document.head.appendChild(script);});
+  await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=`assets/vendor/firebase-messaging-compat.js?v=${MF_ASSET_VERSION}`;script.onload=resolve;script.onerror=()=>reject(new Error('MESSAGING_LOAD_FAILED'));document.head.appendChild(script);});
   return typeof firebase.messaging==='function';
 }
 window.enableBookingNotifications=async function(){if(!('Notification' in window))return aToast('المتصفح لا يدعم إشعارات الهاتف');const permission=await Notification.requestPermission();if(permission!=='granted')return aToast('اسمح بالإشعارات من إعدادات المتصفح');localStorage.setItem('mf-booking-notifications','1');startBookingNotifications();try{await ensureFirebaseMessaging();await window.MFCloud?.registerTeacherPushToken?.();aToast('تم تفعيل التنبيهات حتى عند إغلاق اللوحة');}catch(error){aToast('تم تفعيل تنبيهات الحجوزات أثناء فتح لوحة الإدارة');}};
@@ -1494,6 +1495,126 @@ window.toggleOnlineContentV63=async function(id){const item=(adminData.materials
 function renderSection(){if(!canOpenAdminSection(currentSection))currentSection='overview';({overview:renderOverview,students:renderStudentsUnifiedV62,bookings:renderBookings,schedules:renderSchedulesUnifiedV62,attendance:renderAttendanceUnifiedV62,warnings:renderWarnings,studentRequests:renderStudentRequests,payments:renderPaymentsUnified,exams:renderExamsManagerV63,onlineContent:renderOnlineManagerV63,materials:renderMaterialsProfessionalV62,questionBank:renderQuestionBankProfessionalV62,assignments:renderAssignmentsManagerV63,reviews:renderSaadReviews,reports:renderReports,staff:renderStaffManagement,backup:renderBackup,settings:renderSettings}[currentSection]||renderOverview)();}
 function exportCSV(name, rows){const csv=rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'})); a.download=name; a.click();}
 window.exportBookingsCSV=function(){exportCSV('bookings.csv',[['code','name','grade','month','group','parentPhone','status'],...adminData.bookings.map(b=>[b.code,b.name,b.grade,b.month,b.group,b.parentPhone,b.status])]);};
+
+function cairoAdminDateKey(value=new Date()){
+  const raw=value?.toDate?.()||value,date=raw instanceof Date?raw:new Date(raw);
+  if(Number.isNaN(date.getTime()))return '';
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function studentMatchesAssignmentV6924(assignment,rawStudent){
+  const student=academicStudent(rawStudent),mode=studentMode(student),targetMode=assignment?.deliveryMode||'all';
+  if(student.active===false)return false;
+  if(targetMode!=='all'&&targetMode!==mode)return false;
+  if(assignment?.grade&&assignment.grade!=='كل الصفوف'&&!sameAcademicValue(assignment.grade,student.grade))return false;
+  const scheduleTargeted=assignment?.scheduleId&&student.scheduleId;
+  if(scheduleTargeted&&String(assignment.scheduleId)!==String(student.scheduleId))return false;
+  if(!scheduleTargeted&&assignment?.group&&assignment.group!=='كل المجموعات'&&!sameAcademicValue(assignment.group,student.group))return false;
+  if(assignment?.academicYear&&student.academicYear&&!sameAcademicValue(assignment.academicYear,student.academicYear))return false;
+  if(assignment?.term&&student.term&&!sameAcademicValue(assignment.term,student.term))return false;
+  return true;
+}
+function assignmentRosterV6924(assignment){
+  return (adminData.students||[]).filter(student=>studentMatchesAssignmentV6924(assignment,student)).map(student=>{
+    const normalized=academicStudent(student),submission=(student.homeworks||[]).filter(row=>String(row.assignmentId||'')===String(assignment.id)).sort((a,b)=>String(b.submittedAt||b.createdAt||'').localeCompare(String(a.submittedAt||a.createdAt||'')))[0]||null;
+    const submittedAt=submission?.submittedAt||submission?.createdAt||'',submittedDate=cairoAdminDateKey(submittedAt),late=!!submission&&!!assignment.dueDate&&!!submittedDate&&submittedDate>String(assignment.dueDate),overdue=!submission&&!!assignment.dueDate&&String(assignment.dueDate)<cairoAdminDateKey();
+    return {student:normalized,submission,submitted:!!submission,late,overdue,state:submission?(late?'late':'submitted'):(overdue?'late':'missing')};
+  }).sort((a,b)=>Number(a.submitted)-Number(b.submitted)||String(a.student.name).localeCompare(String(b.student.name),'ar'));
+}
+function assignmentRosterRowHtmlV6924(row,assignmentId){
+  const submission=row.submission,when=submission?.submittedAt||submission?.createdAt||'',stateLabel=row.submitted?(row.late?'سلّم متأخرًا':submission?.approved?'تم التصحيح':'تم التسليم'):(row.overdue?'متأخر ولم يسلّم':'لم يسلّم'),stateClass=row.submitted?(row.late?'warn':submission?.approved?'good':'primary'):(row.overdue?'danger':'warn');
+  return `<article class="assignment-tracking-row" data-assignment-state="${row.state}"><div class="assignment-student-copy"><b>${safe(row.student.name)}</b><small>${safe(row.student.studentCode)} · ${safe(row.student.grade||'')} · ${safe(row.student.group||'')}</small>${when?`<small>وقت التسليم: ${safe(new Date(when).toLocaleString('ar-EG',{dateStyle:'medium',timeStyle:'short'}))}</small>`:'<small>لا يوجد ملف مرفوع</small>'}${submission?.teacherComment?`<small>ملاحظة: ${safe(submission.teacherComment)}</small>`:''}</div><span class="badge ${stateClass}">${stateLabel}</span><div class="assignment-tracking-actions">${submission?.fileUrl?`<a class="small-btn ghost" href="${safeExternalUrl(submission.fileUrl)}" target="_blank" rel="noopener noreferrer">فتح الملف</a>`:''}${submission?`<button class="small-btn primary" type="button" onclick="reviewHomeworkV63('${safe(assignmentId)}','${safe(submission.id)}','${safe(row.student.studentCode)}')">${submission.approved?'تعديل التصحيح':'تصحيح'}</button>`:''}${submission?.score!==null&&submission?.score!==undefined&&submission?.score!==''?`<strong>${safe(submission.score)} / 100</strong>`:''}</div></article>`;
+}
+window.filterAssignmentRosterV6924=function(value){document.querySelectorAll('#assignmentTrackingList [data-assignment-state]').forEach(row=>{row.hidden=value!=='all'&&row.dataset.assignmentState!==value;});};
+window.exportAssignmentTrackingV6924=function(id){const assignment=(adminData.assignments||[]).find(item=>String(item.id)===String(id)),rows=assignmentRosterV6924(assignment);exportCSV(`assignment-${id}.csv`,[['الطالب','الكود','الصف','المجموعة','الحالة','وقت التسليم','الدرجة','الملاحظة'],...rows.map(row=>[row.student.name,row.student.studentCode,row.student.grade,row.student.group,row.submitted?(row.late?'متأخر':'سلّم'):(row.overdue?'متأخر ولم يسلّم':'لم يسلّم'),row.submission?.submittedAt||'',row.submission?.score??'',row.submission?.teacherComment||''])]);};
+window.showAssignmentSubmissionsV63=function(id){
+  const assignment=(adminData.assignments||[]).find(item=>String(item.id)===String(id));if(!assignment)return;
+  const rows=assignmentRosterV6924(assignment),submitted=rows.filter(row=>row.submitted).length,missing=rows.length-submitted,late=rows.filter(row=>row.late||row.overdue).length,reviewed=rows.filter(row=>row.submission?.approved).length;
+  document.getElementById('assignmentSubmissionsModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="admin-form-modal mobile-manager-modal assignment-tracking-modal" id="assignmentSubmissionsModal"><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">متابعة الواجب بالتفصيل</span><h2>${safe(assignment.title||'الواجب')}</h2><p class="section-desc">آخر موعد: ${safe(assignment.dueDate||'غير محدد')}</p></div><button class="small-btn danger" type="button" onclick="this.closest('.admin-form-modal').remove()">إغلاق</button></div><div class="metric-grid assignment-tracking-metrics"><div class="metric"><b>${rows.length}</b><small>المطلوب منهم</small></div><div class="metric"><b>${submitted}</b><small>سلّموا</small></div><div class="metric"><b>${missing}</b><small>لم يسلّموا</small></div><div class="metric"><b>${late}</b><small>متأخرون</small></div><div class="metric"><b>${reviewed}</b><small>تم تصحيحهم</small></div></div><div class="admin-toolbar assignment-tracking-toolbar"><select onchange="filterAssignmentRosterV6924(this.value)"><option value="all">كل الطلاب</option><option value="submitted">المسلّمون في الموعد</option><option value="missing">لم يسلّموا</option><option value="late">المتأخرون</option></select><button class="btn ghost" type="button" onclick="exportAssignmentTrackingV6924('${safe(id)}')">تصدير Excel/CSV</button></div><div class="assignment-tracking-list" id="assignmentTrackingList">${rows.map(row=>assignmentRosterRowHtmlV6924(row,id)).join('')||'<div class="empty-state"><h3>لا يوجد طلاب مطابقون لاستهداف الواجب</h3></div>'}</div></div></div>`);hydrateIcons();
+};
+
+examListRowV63=function(ex){
+  const state=ex.active===false?'مسودة':(ex.openAt&&new Date(ex.openAt)>new Date()?'مجدول':'منشور');
+  return `<article class="card admin-content-row mobile-manager-row exam-manager-row"><span class="admin-content-icon" data-icon="clipboard"></span><div class="manager-row-copy"><b>${safe(ex.title||'امتحان')}</b><small>${examTargetLabel(ex)} · ${safe(ex.grade||'كل الصفوف')} · ${safe(ex.group||'كل المجموعات')} · ${safe(ex.questionCount||parseExamQuestions(ex.text||'').length)} سؤال</small></div><span class="badge manager-row-status ${ex.active===false?'warn':'good'}">${state}</span><div class="mobile-manager-actions"><button class="small-btn primary" type="button" onclick="openExamEditorV63('${safe(ex.id)}')">تعديل</button><button class="small-btn ghost" type="button" onclick="openExamVersionsV6924('${safe(ex.id)}')">سجل النسخ</button><button class="small-btn ghost" type="button" onclick="duplicateExamV63('${safe(ex.id)}')">نسخ</button><button class="small-btn ghost" type="button" onclick="toggleExamV63('${safe(ex.id)}')">${ex.active===false?'نشر':'إيقاف'}</button><button class="small-btn danger" type="button" onclick="deleteItem('exams','${safe(ex.id)}')">حذف</button></div></article>`;
+};
+window.openExamVersionsV6924=async function(examId){
+  const exam=(adminData.exams||[]).find(item=>String(item.id)===String(examId));document.getElementById('examVersionsModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="admin-form-modal mobile-manager-modal" id="examVersionsModal"><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">سجل نسخ الامتحان</span><h2>${safe(exam?.title||'الامتحان')}</h2></div><button class="small-btn danger" type="button" onclick="this.closest('.admin-form-modal').remove()">إغلاق</button></div><div id="examVersionsList"><div class="portal-loading"><b>جاري تحميل النسخ…</b></div></div></div></div>`);
+  try{const rows=await window.MFCloud?.listExamVersions?.(examId);document.getElementById('examVersionsList').innerHTML=(rows||[]).map(row=>`<article class="payment-history-row"><div><b>${safe(row.title||exam?.title||'نسخة سابقة')}</b><small>${safe(row.createdAt?new Date(row.createdAt).toLocaleString('ar-EG',{dateStyle:'medium',timeStyle:'short'}):'وقت غير متاح')}</small></div><button class="small-btn primary" type="button" onclick="restoreExamVersionV6924('${safe(examId)}','${safe(row.id)}')">استعادة</button></article>`).join('')||'<div class="empty-state"><h3>لا توجد نسخ سابقة بعد</h3><p>تُحفظ نسخة تلقائيًا قبل كل تعديل.</p></div>';}catch(error){document.getElementById('examVersionsList').innerHTML='<div class="empty-state"><h3>تعذر تحميل النسخ</h3></div>';}
+};
+window.restoreExamVersionV6924=async function(examId,versionId){if(!confirm('سيتم استعادة هذه النسخة مع الاحتفاظ بنسخة من الوضع الحالي. متابعة؟'))return;try{await window.MFCloud.restoreExamVersion(examId,versionId);await reloadFromCloud();aToast('تمت استعادة نسخة الامتحان');document.getElementById('examVersionsModal')?.remove();renderExamsManagerV63();}catch(error){aToast(adminActionErrorMessage(error,'تعذر استعادة النسخة.'));}};
+
+function platformHealthCardV6924(title,item,details=''){
+  const ok=item?.ok===true;return `<article class="card health-status-card ${ok?'healthy':'unhealthy'}"><span class="badge ${ok?'good':'danger'}">${ok?'يعمل':'يحتاج مراجعة'}</span><h3>${safe(title)}</h3><p>${safe(details||item?.message||'تم الفحص بنجاح')}</p></article>`;
+}
+window.renderPlatformHealthV6924=async function(){
+  content('<div class="section-head"><div><span class="kicker"><span data-icon="bar-chart"></span> المراقبة</span><h2 class="section-title">صحة المنصة</h2><p class="section-desc">فحص مباشر للخدمات وآخر أخطاء وصلت من أجهزة الطلاب.</p></div><button class="btn ghost" type="button" onclick="renderPlatformHealthV6924()">إعادة الفحص</button></div><div id="platformHealthResult" class="card"><div class="portal-loading"><b>جاري فحص الخدمات…</b></div></div>');
+  try{
+    const result=await window.MFCloud?.getPlatformHealth?.(),status=result?.status||{},errors=result?.errors||[],cfg=window.MF_FIREBASE_CONFIG||{};
+    document.getElementById('platformHealthResult').outerHTML=`<div id="platformHealthResult"><div class="grid grid-3 health-status-grid">${platformHealthCardV6924('Firebase Functions',status.functions,`الإصدار ${status.functions?.release||'-'}`)}${platformHealthCardV6924('قاعدة البيانات',status.database)}${platformHealthCardV6924('رفع الملفات',status.storage,status.storage?.bucket||'Firebase Storage')}${platformHealthCardV6924('الإشعارات',status.notifications,cfg.messagingVapidKey?`مدرس: ${status.notifications?.teacherTokens||0} · طلاب: ${status.notifications?.studentTokens||0}`:'VAPID Key غير مضاف في firebase-config.js')}${platformHealthCardV6924('آخر نسخة منشورة',{ok:status.lastPublished?.frontend===status.lastPublished?.backend},`واجهة ${status.lastPublished?.frontend||'-'} · Functions ${status.lastPublished?.backend||'-'}`)}</div><section class="card health-errors-card"><div class="profile-top"><div><h3>آخر أخطاء الطلاب</h3><p class="section-desc">آخر ${errors.length} خطأ مسجل</p></div><span class="badge ${errors.length?'warn':'good'}">${errors.length}</span></div><div class="admin-clean-list">${errors.map(row=>`<article class="payment-history-row"><div><b>${safe(row.message||'خطأ غير معروف')}</b><small>${safe(row.page||'-')}</small><small>${safe(row.createdAt?new Date(row.createdAt).toLocaleString('ar-EG'):'')}</small></div></article>`).join('')||'<div class="empty-state"><h3>لا توجد أخطاء حديثة</h3></div>'}</div></section><p class="section-desc">آخر فحص: ${safe(new Date(result.checkedAt).toLocaleString('ar-EG'))}</p></div>`;hydrateIcons();
+  }catch(error){document.getElementById('platformHealthResult').innerHTML=`<div class="empty-state"><h3>تعذر تشغيل فحص الصحة</h3><p>${safe(adminActionErrorMessage(error,'تأكد من نشر Functions V69.2.4.'))}</p></div>`;}
+};
+const renderSectionBeforeHealthV6924=renderSection;
+renderSection=function(){if(currentSection==='health')return renderPlatformHealthV6924();return renderSectionBeforeHealthV6924();};
+
+// V69.2.4 — one resilient QR flow for the teacher camera, saved images and
+// every supported student QR format. This override also prevents the old
+// attendance renderer from replacing the unified center/online filters.
+const handleContinuousQrScanLegacyV6924=handleContinuousQrScan;
+handleContinuousQrScan=async function(rawValue){
+  const parsed=typeof parseUnifiedStudentQr==='function'?parseUnifiedStudentQr(rawValue):null;
+  if(parsed?.type==='attendance'){updateContinuousQrStatus('هذا باركود حصة أونلاين — امسح QR الطالب','warning');return;}
+  const code=parsed?.type==='student'?parsed.code:String(rawValue||'').trim().toUpperCase();
+  return handleContinuousQrScanLegacyV6924(code);
+};
+function ensureAdminQrSourceActions(){
+  const reader=document.getElementById('adminQrReader');if(!reader)return;
+  document.getElementById('adminQrSourceActions')?.remove();
+  reader.insertAdjacentHTML('afterend','<div class="qr-source-actions" id="adminQrSourceActions"><button class="btn ghost small" type="button" onclick="document.getElementById(\'adminQrImageInput\')?.click()"><span data-icon="image"></span> اختيار صورة QR</button><button class="btn ghost small" type="button" onclick="openQrScanner()"><span data-icon="qr"></span> إعادة تشغيل الكاميرا</button><input id="adminQrImageInput" type="file" accept="image/*" hidden onchange="scanAdminQrImage(event)"></div>');
+  hydrateIcons();
+}
+window.openQrScanner=async function(){
+  const modal=document.getElementById('qrScannerModal');if(!modal)return;
+  modal.hidden=false;qrAttendanceProcessing=false;qrAttendanceLastValue='';qrAttendanceLastTime=0;
+  if(!document.getElementById('continuousQrStatus'))qrAttendanceSessionCount=0;
+  const reader=document.getElementById('adminQrReader');if(!reader)return;
+  try{if(qrScanner){await qrScanner.stop();qrScanner.clear();qrScanner=null;}}catch(error){qrScanner=null;}
+  const oldVideo=document.getElementById('adminQrVideo');if(oldVideo?.srcObject)oldVideo.srcObject.getTracks().forEach(track=>track.stop());
+  document.getElementById('continuousQrStatus')?.remove();
+  reader.insertAdjacentHTML('beforebegin','<div id="continuousQrStatus" class="continuous-qr-status ready"><b>جاهز لمسح الطالب الأول</b><small>سيظل الماسح مفتوحًا لتسجيل الطلاب واحدًا وراء الآخر</small></div>');
+  reader.innerHTML='<p class="section-desc">جاري تجهيز الكاميرا الخلفية…</p>';ensureAdminQrSourceActions();
+  try{
+    if(!window.Html5Qrcode)await window.MFAssets?.loadQrScanner?.();reader.innerHTML='';
+    if(window.Html5Qrcode){
+      qrScanner=new Html5Qrcode('adminQrReader');
+      await startHtml5QrCamera(qrScanner,{fps:12,qrbox:{width:260,height:260},aspectRatio:1},decoded=>handleContinuousQrScan(decoded),()=>{});
+      updateContinuousQrStatus('الكاميرا جاهزة — وجّهها نحو QR الطالب','ready');return;
+    }
+    if(!navigator.mediaDevices?.getUserMedia||!('BarcodeDetector'in window))throw new Error('scanner-unavailable');
+    reader.innerHTML='<video id="adminQrVideo" autoplay playsinline muted></video>';
+    const video=document.getElementById('adminQrVideo'),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    video.srcObject=stream;await video.play();const detector=new BarcodeDetector({formats:['qr_code']});
+    const loop=async()=>{if(document.getElementById('qrScannerModal')?.hidden)return;const codes=await detector.detect(video).catch(()=>[]);if(codes.length)await handleContinuousQrScan(codes[0].rawValue);setTimeout(loop,250);};loop();
+  }catch(error){reader.innerHTML='<p class="section-desc">تعذر تشغيل الكاميرا. يمكنك اختيار صورة QR أو إدخال الكود يدويًا.</p>';updateContinuousQrStatus('تعذر تشغيل الكاميرا — استخدم الصورة أو الإدخال اليدوي','error');}
+};
+window.scanAdminQrImage=async function(event){
+  const input=event?.target,file=input?.files?.[0],reader=document.getElementById('adminQrReader');if(!file||!reader)return;
+  try{
+    const video=document.getElementById('adminQrVideo');if(video?.srcObject)video.srcObject.getTracks().forEach(track=>track.stop());
+    try{if(qrScanner){await qrScanner.stop();qrScanner.clear();}}catch(error){}qrScanner=null;
+    if(!window.Html5Qrcode)await window.MFAssets?.loadQrScanner?.();if(!window.Html5Qrcode)throw new Error('scanner-unavailable');
+    reader.innerHTML='';qrScanner=new Html5Qrcode('adminQrReader');const decoded=await qrScanner.scanFile(file,true);await handleContinuousQrScan(decoded);
+    reader.innerHTML='<p class="qr-file-status">تمت قراءة الصورة. اختر صورة أخرى أو أعد تشغيل الكاميرا.</p>';
+  }catch(error){reader.innerHTML='<p class="qr-file-status">تعذر قراءة QR من الصورة. استخدم صورة واضحة يظهر فيها الباركود كاملًا.</p>';updateContinuousQrStatus('لم يتم العثور على QR صالح في الصورة','error');}
+  finally{if(input)input.value='';ensureAdminQrSourceActions();}
+};
+window.closeQrScanner=async function(){
+  try{if(qrScanner){await qrScanner.stop();qrScanner.clear();qrScanner=null;}}catch(error){qrScanner=null;}
+  const video=document.getElementById('adminQrVideo');if(video?.srcObject)video.srcObject.getTracks().forEach(track=>track.stop());
+  const modal=document.getElementById('qrScannerModal');if(modal)modal.hidden=true;qrAttendanceProcessing=false;
+  if(currentSection==='attendance')renderAttendanceUnifiedV62();
+};
 
 function initAdmin(){const requested=new URLSearchParams(location.search).get('section');if(adminSections.some(([id])=>id===requested))currentSection=requested;setupTheme(); hydrateIcons(); adminLogin(); tryRestoreSession();}
 document.addEventListener('DOMContentLoaded',initAdmin);
