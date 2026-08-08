@@ -1,0 +1,47 @@
+$ErrorActionPreference = "Stop"
+
+$Zip = Join-Path $env:USERPROFILE "Downloads\saad-ewida-science-platform-fixed-v69.2.6.zip"
+if (!(Test-Path -LiteralPath $Zip)) { throw "ملف النسخة V69.2.6 غير موجود داخل Downloads" }
+
+$Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$Extract = Join-Path $env:USERPROFILE "Downloads\saad-ewida-v69.2.6-$Stamp"
+Expand-Archive -LiteralPath $Zip -DestinationPath $Extract
+
+$Source = Join-Path $Extract "saad-ewida-science-platform-fixed-v69.2.6"
+if (!(Test-Path -LiteralPath (Join-Path $Source "package.json"))) { throw "لم يتم العثور على مجلد المشروع بعد فك الضغط" }
+
+Set-Location $Source
+npm ci
+if ($LASTEXITCODE -ne 0) { throw "فشل تثبيت مكتبات المشروع" }
+npm test
+if ($LASTEXITCODE -ne 0) { throw "فشلت اختبارات المشروع" }
+npm run build
+if ($LASTEXITCODE -ne 0) { throw "فشل بناء المشروع" }
+
+$RepositoryUrl = "https://github.com/byAmrkhaled0/saad-ewida-science-platform.git"
+$Repo = Join-Path $env:USERPROFILE "Downloads\saad-ewida-production-v69.2.6-$Stamp"
+git clone $RepositoryUrl $Repo
+if ($LASTEXITCODE -ne 0) { throw "فشل تنزيل مستودع GitHub" }
+if (!(Test-Path -LiteralPath (Join-Path $Repo ".git"))) { throw "مجلد Git غير صالح" }
+
+Get-ChildItem -LiteralPath $Repo -Force |
+  Where-Object { $_.Name -ne ".git" } |
+  Remove-Item -Recurse -Force
+
+robocopy $Source $Repo /E /XD ".git" "node_modules" "dist" /XF "*.zip" "*.log"
+$RoboCopyResult = $LASTEXITCODE
+if ($RoboCopyResult -ge 8) { throw "حدث خطأ أثناء نسخ ملفات المشروع" }
+
+Set-Location $Repo
+npm ci
+if ($LASTEXITCODE -ne 0) { throw "فشل تثبيت مكتبات نسخة Git" }
+
+npx --yes firebase-tools@latest login
+if ($LASTEXITCODE -ne 0) { throw "فشل تسجيل الدخول إلى Firebase" }
+
+powershell -ExecutionPolicy Bypass -File ".\deploy-production.ps1"
+if ($LASTEXITCODE -ne 0) { throw "فشل النشر" }
+
+git log -1 --oneline
+Write-Host "تم نشر Firebase indexes وFunctions ورفع V69.2.6 إلى GitHub بنجاح" -ForegroundColor Green
+Write-Host "انتظر Vercel حتى تصبح الحالة Ready، وقد تستغرق فهارس Firestore عدة دقائق حتى تصبح Enabled" -ForegroundColor Cyan

@@ -25,7 +25,7 @@ const {
   assignmentDueDatePassed,
   assignmentSubmissionIsOpen
 } = require('./lib/assignment-schedule');
-const BACKEND_RELEASE = '69.2.4';
+const BACKEND_RELEASE = '69.2.6';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -35,7 +35,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '69-2-4' }
+  labels: { 'platform-release': '69-2-6' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -43,7 +43,7 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '69-2-4' }
+  labels: { 'platform-release': '69-2-6' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
@@ -439,7 +439,7 @@ exports.restoreExamVersion = onCall(CALLABLE_OPTIONS, async request=>{
 
 exports.getPlatformHealth = onCall(CALLABLE_OPTIONS, async request=>{
   await requireStaff(request);const checkedAt=new Date().toISOString();
-  const status={functions:{ok:true,release:BACKEND_RELEASE},database:{ok:false},storage:{ok:false},notifications:{ok:false,teacherTokens:0,studentTokens:0},lastPublished:{frontend:'69.2.4',backend:BACKEND_RELEASE}};
+  const status={functions:{ok:true,release:BACKEND_RELEASE},database:{ok:false},storage:{ok:false},notifications:{ok:false,teacherTokens:0,studentTokens:0},lastPublished:{frontend:'69.2.6',backend:BACKEND_RELEASE}};
   try{await db.collection('settings').doc('platform').get();status.database={ok:true};}catch(error){status.database={ok:false,message:text(error.message,180)};}
   try{const [metadata]=await admin.storage().bucket().getMetadata();status.storage={ok:true,bucket:text(metadata.name,180)};}catch(error){status.storage={ok:false,message:text(error.message,180)};}
   try{const [teacherTokens,studentTokens]=await Promise.all([db.collection('staff_push_tokens').where('active','==',true).count().get(),db.collection('student_push_tokens').where('active','==',true).count().get()]);status.notifications={ok:true,teacherTokens:teacherTokens.data().count,studentTokens:studentTokens.data().count};}catch(error){status.notifications={ok:false,message:text(error.message,180),teacherTokens:0,studentTokens:0};}
@@ -520,6 +520,19 @@ function parseExamQuestions(source) {
     }
     return { type: 'essay', question, options: [], optionLabels: [], answer: '', points };
   }).filter(q => q.question);
+}
+
+function examQuestionList(exam) {
+  const structured=Array.isArray(exam?.questions)?exam.questions.slice(0,200):[];
+  const normalized=structured.map(raw=>{
+    const type=raw?.type==='essay'?'essay':'mcq',question=text(raw?.question,1500),points=positiveScore(raw?.points,1);
+    if(type==='essay')return {type,question,options:[],optionLabels:[],answer:'',points};
+    const options=(Array.isArray(raw?.options)?raw.options:[]).slice(0,8).map(option=>text(option,700));
+    const optionLabels=(Array.isArray(raw?.optionLabels)&&raw.optionLabels.length?raw.optionLabels:['أ','ب','ج','د']).slice(0,options.length).map(label=>text(label,10));
+    const correctIndex=Number(raw?.correctIndex),answer=Number.isInteger(correctIndex)&&correctIndex>=0&&correctIndex<options.length?optionLabels[correctIndex]:text(raw?.answer,700);
+    return {type,question,options,optionLabels,answer,points};
+  }).filter(question=>question.question&&(question.type==='essay'||question.options.length>=2));
+  return normalized.length?normalized:parseExamQuestions(exam?.text||exam?.questionsText||'');
 }
 
 function normalizeAnswer(value) {
@@ -699,12 +712,22 @@ async function attemptSummaries(studentCode) {
 
 async function studentRecords(studentCode) {
   const normalized = normalizeCode(studentCode);
-  const load = async collection => {
-    const snap = await db.collection(collection).where('studentCode', '==', normalized).limit(250).get().catch(() => null);
-    return snap ? snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
+  const load = async (collection, orderBy) => {
+    let query = db.collection(collection).where('studentCode', '==', normalized);
+    if (orderBy) query = query.orderBy(orderBy, 'desc');
+    try {
+      const snap = await query.limit(250).get();
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+      // Keep portals available during the short interval in which a newly
+      // deployed composite index is still building.
+      if (!orderBy || !/failed-precondition|index/i.test(`${error?.code || ''} ${error?.message || ''}`)) throw error;
+      const snap = await db.collection(collection).where('studentCode', '==', normalized).limit(250).get();
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
   };
   const [attendance, grades, homeworks, recitations, payments] = await Promise.all([
-    load('attendance'), load('grades'), load('homework_submissions'), load('recitations'), load('payment_records')
+    load('attendance', 'date'), load('grades', 'date'), load('homework_submissions', 'submittedAt'), load('recitations', 'date'), load('payment_records', 'monthKey')
   ]);
   const byDate = rows => rows.sort((a, b) => String(a.date || a.submittedAt || a.createdAt || '').localeCompare(String(b.date || b.submittedAt || b.createdAt || '')));
   return { attendance: byDate(attendance), grades: byDate(grades), homeworks: byDate(homeworks), recitations: byDate(recitations), payments: payments.sort((a,b)=>String(a.monthKey||'').localeCompare(String(b.monthKey||''))) };
@@ -1996,7 +2019,7 @@ exports.getExamDashboard = onCall(CALLABLE_OPTIONS, async request => {
       allowRetake: exam.allowRetake === true,
       maxScore: positiveScore(exam.maxScore,100),
       scheduleState: getExamScheduleState(exam).state,
-      questionCount: Number(exam.questionCount || parseExamQuestions(exam.text || exam.questionsText).length)
+      questionCount: Number(exam.questionCount || examQuestionList(exam).length)
     }));
   const [attempts, records] = await Promise.all([attemptSummaries(studentCode), studentRecords(studentCode)]);
   return { student: portalResponse(found.data, attempts, records), exams, serverNow:Date.now() };
@@ -2014,7 +2037,7 @@ exports.startExam = onCall(CALLABLE_OPTIONS, async request => {
   if (!examMatchesStudent(exam, found.data)) {
     throw new HttpsError('permission-denied', 'هذا الامتحان غير مخصص لصفك أو مجموعتك أو عامك الدراسي.');
   }
-  const questions = assignQuestionScores(parseExamQuestions(exam.text || exam.questionsText || ''),exam.maxScore);
+  const questions = assignQuestionScores(examQuestionList(exam),exam.maxScore);
   if (!questions.length) throw new HttpsError('failed-precondition', 'الامتحان لا يحتوي على أسئلة صالحة.');
   if (questions.length > 200) throw new HttpsError('failed-precondition', 'عدد أسئلة الامتحان أكبر من الحد المسموح.');
 
@@ -2176,7 +2199,7 @@ exports.submitExam = onCall(CALLABLE_OPTIONS, async request => {
   };
   const questions = assignQuestionScores(Array.isArray(session.questions) && session.questions.length
     ? session.questions
-    : parseExamQuestions(exam.text || exam.questionsText || ''),session.maxScore||exam.maxScore);
+    : examQuestionList(exam),session.maxScore||exam.maxScore);
   if (!questions.length) throw new HttpsError('failed-precondition', 'تعذر قراءة أسئلة الامتحان.');
   if (Object.keys(rawAnswers).length > questions.length + 5) throw new HttpsError('invalid-argument', 'عدد الإجابات غير صالح.');
 

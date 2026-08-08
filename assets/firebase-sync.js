@@ -306,6 +306,39 @@
       if(limit)ref=ref.limit(limit);
       const snap=await ref.get();return snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id}));
     }
+    const staffRecordSources=Object.freeze({
+      attempts:{collection:'exam_attempts',orderBy:'submittedAt'},
+      grades:{collection:'grades',orderBy:'date'},
+      attendance:{collection:'attendance',orderBy:'date'},
+      recitations:{collection:'recitations',orderBy:'date'},
+      homeworks:{collection:'homework_submissions',orderBy:'submittedAt'},
+      paymentRecords:{collection:'payment_records',orderBy:'monthKey'}
+    });
+    async function loadStaffRecordPage(type,options={}){
+      const source=staffRecordSources[type];
+      if(!source)throw new Error('Unknown staff record type');
+      const pageSize=Math.max(25,Math.min(250,Number(options.pageSize)||200));
+      const savedCursor=options.cursor&&options.cursor.snapshot?options.cursor:null;
+      let mode=savedCursor?.mode==='documentId'?'documentId':'field';
+      const makeQuery=queryMode=>{
+        const field=queryMode==='documentId'?firebase.firestore.FieldPath.documentId():source.orderBy;
+        let ref=db.collection(source.collection).orderBy(field,'desc').limit(pageSize);
+        if(savedCursor?.snapshot)ref=ref.startAfter(savedCursor.snapshot);
+        return ref;
+      };
+      let snap;
+      try{snap=await makeQuery(mode).get();}
+      catch(error){
+        // Older rows may predate the chronological field. The document-id
+        // fallback keeps pagination available without restoring a full scan.
+        if(savedCursor)throw error;
+        mode='documentId';snap=await makeQuery(mode).get();
+      }
+      const rows=snap.docs.map(doc=>({id:doc.id,firestoreId:doc.id,...doc.data()}));
+      rows.forEach(item=>seedFingerprint(source.collection,cleanDocId(item.id),item));
+      const last=snap.docs[snap.docs.length-1]||null,hasMore=snap.docs.length===pageSize;
+      return {type,rows,hasMore,cursor:hasMore&&last?{mode,snapshot:last}:null};
+    }
     async function getSettings(){const snap=await platformSettingsDoc.get().catch(()=>null);return snap?.exists?snap.data():{};}
     async function getApprovedReviews(){const snap=await db.collection('reviews').where('approved','==',true).limit(100).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));}
 
@@ -326,10 +359,10 @@
     }
 
     async function loadStaffCoreCollections(){
-      const [students,bookings,materials,questions,exams,reviews,groups,assignments,payments,paymentRecords,studentTransferRequests,settings]=await Promise.all([
-        getDocs('students').catch(()=>[]),getDocs('bookings').catch(()=>[]),getDocs('materials').catch(()=>[]),getDocs('questions').catch(()=>[]),
+      const [students,bookings,materials,questions,exams,reviews,groups,assignments,payments,studentTransferRequests,settings]=await Promise.all([
+        getDocs('students').catch(()=>[]),getDocs('bookings',500,{orderBy:'createdAt',direction:'desc'}).catch(()=>[]),getDocs('materials').catch(()=>[]),getDocs('questions').catch(()=>[]),
         getDocs('exams').catch(()=>[]),getDocs('reviews').catch(()=>[]),getDocs('groups').catch(()=>[]),getDocs('assignments').catch(()=>[]),
-        getDocs('payments',3000).catch(()=>[]),getDocs('payment_records',5000).catch(()=>[]),getDocs('student_transfer_requests',1000,{orderBy:'createdAt',direction:'desc'}).catch(()=>[]),getSettings().catch(()=>({}))
+        getDocs('payments',3000).catch(()=>[]),getDocs('student_transfer_requests',500,{orderBy:'createdAt',direction:'desc'}).catch(()=>[]),getSettings().catch(()=>({}))
       ]);
       const normalized=students.map(normalizedStudent);const map=new Map(normalized.map(st=>[st.studentCode,st]));
       payments.forEach(row=>{const st=map.get(normalizeCode(row.studentCode||row.studentId||''));if(st){st.paid=row.paid===true;st.paymentDate=row.paymentDate||st.paymentDate;}});
@@ -339,10 +372,9 @@
       });
       bookings.forEach(item=>seedFingerprint('bookings',cleanDocId(item.code||item.id),item));
       payments.forEach(item=>seedFingerprint('payments',cleanDocId(item.studentCode||item.studentId||item.id),item));
-      paymentRecords.forEach(item=>seedFingerprint('payment_records',cleanDocId(item.id||`${item.studentCode}_${item.monthKey}`),item));
       [['materials',materials],['questions',questions],['exams',exams],['reviews',reviews],['groups',groups],['assignments',assignments]].forEach(([collection,rows])=>rows.forEach(item=>seedFingerprint(collection,cleanDocId(item.id),item)));
       seedFingerprint('settings','platform',settings);
-      return {students:normalized,bookings,materials,questions,exams,reviews,groups,assignments,paymentRecords,studentTransferRequests,examAttempts:[],grades:[],settings};
+      return {students:normalized,bookings,materials,questions,exams,reviews,groups,assignments,paymentRecords:[],studentTransferRequests,examAttempts:[],grades:[],settings};
     }
 
     async function loadStaffRecordCollections(){
@@ -360,10 +392,19 @@
       const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
       const studentCode=normalizeCode(code),id=cleanDocId(studentCode),studentSnap=await db.collection('students').doc(id).get();
       if(!studentSnap.exists||studentSnap.data()?.active===false)throw new Error('Student not found');
-      const rows=async collection=>{const snap=await db.collection(collection).where('studentCode','==',studentCode).limit(250).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));};
+      const rows=async(collection,orderBy)=>{
+        let query=db.collection(collection).where('studentCode','==',studentCode);
+        if(orderBy)query=query.orderBy(orderBy,'desc');
+        try{const snap=await query.limit(250).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));}
+        catch(error){
+          if(!orderBy||!/failed-precondition|index/i.test(`${error?.code||''} ${error?.message||''}`))throw error;
+          const snap=await db.collection(collection).where('studentCode','==',studentCode).limit(250).get();
+          return snap.docs.map(doc=>({id:doc.id,...doc.data()}));
+        }
+      };
       const [attendance,grades,homeworks,recitations,attempts,payment,paymentRecords,assignments]=await Promise.all([
-        rows('attendance').catch(()=>[]),rows('grades').catch(()=>[]),rows('homework_submissions').catch(()=>[]),rows('recitations').catch(()=>[]),rows('exam_attempts').catch(()=>[]),
-        db.collection('payments').doc(id).get().catch(()=>null),rows('payment_records').catch(()=>[]),getDocs('assignments',300).catch(()=>[])
+        rows('attendance','date').catch(()=>[]),rows('grades','date').catch(()=>[]),rows('homework_submissions','submittedAt').catch(()=>[]),rows('recitations','date').catch(()=>[]),rows('exam_attempts','submittedAt').catch(()=>[]),
+        db.collection('payments').doc(id).get().catch(()=>null),rows('payment_records','monthKey').catch(()=>[]),getDocs('assignments',300).catch(()=>[])
       ]);
       const student=normalizedStudent({id,...studentSnap.data(),studentCode,code:studentCode});
       if(payment?.exists){student.paid=payment.data().paid===true;student.paymentDate=payment.data().paymentDate||student.paymentDate;}
@@ -598,7 +639,16 @@
         return data;
       },
       loadStaffRecords:async()=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordCollections();},
+      loadStaffRecordPage:async(type,options={})=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordPage(type,options);},
       saveSiteData:async(payload,options={})=>syncPayloadToCollections(payload,options),
+      saveExam:async exam=>{
+        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
+        const id=cleanDocId(exam?.id);if(!id||!String(exam?.title||'').trim())throw new Error('Invalid exam data');
+        const body={...exam,id,active:exam.active!==false,allowRetake:exam.allowRetake===true,questionCount:Math.max(0,Number(exam.questionCount||0)),updatedBy:profile.email||profile.uid,updatedAt:serverTime()};
+        await retryTransient(()=>db.collection('exams').doc(id).set(body,{merge:true}),1);
+        seedFingerprint('exams',id,{...exam,id});
+        return {...exam,id,updatedAt:nowIso()};
+      },
       saveStudent:async student=>{const ops=[];pushStudentOps(ops,student);await commitOperations(ops);},
       saveMonthlyPayment:async(record,student)=>{
         const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');

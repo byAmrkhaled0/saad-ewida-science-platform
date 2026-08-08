@@ -61,7 +61,7 @@ Write-Host "8/8 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked -Label "git add" -Action { git add -A }
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked -Label "git commit" -Action { git commit -m "Fix live exam sync, QR scanner, homework tracking and alerts V69.2.4" }
+  Invoke-Checked -Label "git commit" -Action { git commit -m "Add paginated admin records and Firestore indexes V69.2.6" }
   Invoke-Checked -Label "git push" -Action { git push origin main }
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow

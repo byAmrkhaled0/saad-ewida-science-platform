@@ -24,6 +24,54 @@
         { "fieldPath": "date", "order": "ASCENDING" },
         { "fieldPath": "group", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentCode", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "grades",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentCode", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "recitations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentCode", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "homework_submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentCode", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exam_attempts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentCode", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payment_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentCode", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

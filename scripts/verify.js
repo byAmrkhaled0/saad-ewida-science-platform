@@ -8,11 +8,11 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const requiredFiles = [
   'index.html', 'student.html', 'parent.html', 'exams.html', 'teacher-login.html',
-  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/firebase-lazy.js',
+  'assets/app.js', 'assets/admin.js', 'assets/exam-editor.js', 'assets/v53-upgrades.js', 'assets/v55.css', 'assets/v56-fixes.js', 'assets/v56.css', 'assets/v64-mobile.css', 'assets/teacher.webp', 'assets/teacher-480.webp', 'assets/firebase-lazy.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
-  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
+  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
 
 const failures = [];
@@ -26,10 +26,10 @@ for (const relative of requiredFiles) {
 if (!failures.length) ok('Required files exist');
 
 const jsFiles = [
-  'assets/app.js', 'assets/admin.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
+  'assets/app.js', 'assets/admin.js', 'assets/exam-editor.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
-  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/assignment-schedule.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
+  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
 for (const relative of jsFiles) {
@@ -392,9 +392,12 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '69.2.4' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.4'") || !read('service-worker.js').includes('mf-science-v6924-live-sync-qr') || [...functionsSource.matchAll(/'platform-release': '69-2-4'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '69.2.4'")) fail('V69.2.4 frontend/backend release identifiers are invalid');
+if (packageInfo.version !== '69.2.6' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.6'") || !read('service-worker.js').includes('mf-science-v6926-paginated-admin') || [...functionsSource.matchAll(/'platform-release': '69-2-6'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '69.2.6'")) fail('V69.2.6 frontend/backend release identifiers are invalid');
 if (!read('assets/v56-fixes.js').includes('saadExamFilterV6921') || !read('assets/v56-fixes.js').includes('saadExamGroupV6921') || !read('assets/v56-fixes.js').includes("_attendance:'missing'")) fail('V69.2.1 exam attendance filters are incomplete');
-if (!adminSourceCode.includes('adminRecordSections') || !adminSourceCode.includes('ensureAdminRecords') || !read('scripts/build.js').includes('const adminCssParts = cssParts')) fail('V69.2.4 lazy admin records or complete admin stylesheet is incomplete');
+if (!adminSourceCode.includes('adminRecordSections') || !adminSourceCode.includes('ensureAdminRecords') || !adminSourceCode.includes('loadNextAdminRecordType') || !firebaseSyncSource.includes('loadStaffRecordPage') || !read('scripts/build.js').includes('const adminCssParts = cssParts')) fail('V69.2.6 paginated admin records or complete admin stylesheet is incomplete');
+if (!adminSourceCode.includes('function adminEditorIsOpen') || !adminSourceCode.includes("form.dataset.saving==='true'") || !firebaseSyncSource.includes('saveExam:async exam') || !functionsSource.includes('function examQuestionList(exam)')) fail('Stable single-document exam editing safeguards are incomplete');
+if (!adminSourceCode.includes("sessionStorage.setItem('saad-admin-student-filters'") || !adminSourceCode.includes("sameAcademicValue(student.grade,grade)")) fail('Student grade filters are not durable or academically normalized');
+if (!read('scripts/build.js').includes("require('esbuild')") || !read('scripts/build.js').includes('minify:true')) fail('Production JavaScript and CSS minification is missing');
 for (const vendor of ['app','auth','firestore','storage','functions','messaging']) {
   if (!fs.existsSync(path.join(root,`assets/vendor/firebase-${vendor}-compat.js`))) fail(`Local Firebase ${vendor} compatibility bundle is missing`);
 }

@@ -1383,3 +1383,10 @@ body{background:radial-gradient(circle at 12% 4%,rgba(21,154,165,.14),transparen
   #booking .booking-form-compact{overflow:visible}.booking-group-picker{padding:11px!important}.booking-group-picker select{min-height:52px}.booking-group-picker .field-hint{font-size:.75rem}
 }
 @media(max-width:380px){.online-filters{grid-template-columns:1fr!important}.online-filters label:last-child{grid-column:auto}.online-tabs button{font-size:.66rem!important}}
+.admin-record-load-status{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--muted);font-size:.9rem;font-weight:800}
+.admin-record-load-status .small-btn{margin-inline-start:auto;white-space:nowrap}
+.admin-record-status-dot{width:9px;height:9px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.12);flex:0 0 auto}
+.admin-record-load-status.loading .admin-record-status-dot{background:#2563eb;box-shadow:0 0 0 4px rgba(37,99,235,.12);animation:admin-record-pulse 1.2s ease-in-out infinite}
+.admin-record-load-status.warn .admin-record-status-dot{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.14)}
+@keyframes admin-record-pulse{50%{opacity:.35;transform:scale(.75)}}
+@media (max-width:640px){.admin-record-load-status{align-items:flex-start;flex-wrap:wrap}.admin-record-load-status .small-btn{width:100%;margin-inline-start:0}}

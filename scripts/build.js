@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { transformSync } = require('esbuild');
 
 const root = path.resolve(__dirname, '..');
 const dist = path.join(root, 'dist');
@@ -116,11 +117,13 @@ const cssParts = ['site.css','v55.css','v56.css','v57.css','v59.css','v60.css','
 // Keep the complete CSS bundle here; data and listeners remain lazy-loaded.
 const adminCssParts = cssParts;
 const publicJsParts = ['app.js','v53-upgrades.js','v56-fixes.js','v61-ui.js'];
-const adminJsParts = ['app.js','admin.js','v56-fixes.js','v61-ui.js'];
-const joinAssets = (items, output) => fs.writeFileSync(
-  path.join(dist, 'assets', output),
-  items.map(name => fs.readFileSync(path.join(root, 'assets', name), 'utf8')).join('\n;\n')
-);
+const adminJsParts = ['exam-editor.js','app.js','admin.js','v56-fixes.js','v61-ui.js'];
+const joinAssets = (items, output) => {
+  const source=items.map(name => fs.readFileSync(path.join(root, 'assets', name), 'utf8')).join('\n;\n');
+  const loader=output.endsWith('.css')?'css':'js';
+  const result=transformSync(source,{loader,minify:true,target:'es2020',charset:'utf8',legalComments:'none'});
+  fs.writeFileSync(path.join(dist, 'assets', output), result.code);
+};
 joinAssets(cssParts, 'platform.css');
 joinAssets(adminCssParts, 'admin-platform.css');
 joinAssets(publicJsParts, 'platform.js');
