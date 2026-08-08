@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6926-paginated-admin";
+const CACHE_NAME = "mf-science-v6927-content-visibility";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",

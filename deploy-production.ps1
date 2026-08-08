@@ -37,7 +37,7 @@ $FunctionGroups = @(
   "functions:createReview,functions:registerTeacherPushToken,functions:registerStudentPushToken,functions:createAttendanceSession,functions:claimAttendanceSession,functions:recordLectureProgress,functions:recordClassProgress,functions:getExamDashboard,functions:startExam",
   "functions:syncExamSession,functions:submitExam,functions:prepareHomeworkUpload,functions:registerHomeworkSubmission,functions:reportClientError,functions:getPlatformHealth,functions:listExamVersions,functions:restoreExamVersion",
   "functions:createBackupNow,functions:listAutomaticBackups,functions:getBackupDownloadUrl,functions:restoreAutomaticBackup,functions:deleteStudentSafely,functions:scheduledPlatformBackup",
-  "functions:notifyStaffOnBookingCreated,functions:notifyStudentsOnExamUpdated,functions:notifyStudentsOnAssignmentUpdated,functions:notifyStudentsOnLectureUpdated,functions:archiveExamVersion",
+  "functions:notifyStaffOnBookingCreated,functions:notifyStudentsOnExamUpdated,functions:notifyStudentsOnAssignmentUpdated,functions:notifyStudentsOnLectureUpdated,functions:notifyStudentsOnQuestionUpdated,functions:archiveExamVersion",
   "functions:listStaffAccounts,functions:upsertStaffAccount,functions:setStaffAccountState,functions:uploadBookingReceipt,functions:reviewBookingReceipt"
 )
 foreach ($Group in $FunctionGroups) {
@@ -61,7 +61,7 @@ Write-Host "8/8 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked -Label "git add" -Action { git add -A }
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked -Label "git commit" -Action { git commit -m "Add paginated admin records and Firestore indexes V69.2.6" }
+  Invoke-Checked -Label "git commit" -Action { git commit -m "Fix targeted content delivery and Cairo schedules V69.2.7" }
   Invoke-Checked -Label "git push" -Action { git push origin main }
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow

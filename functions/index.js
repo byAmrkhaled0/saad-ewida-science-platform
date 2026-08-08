@@ -18,6 +18,7 @@ const QRCode = require('qrcode');
 const { calculateMonthlyMetrics } = require('./lib/monthly-incentive');
 const { positiveScore, assignQuestionScores, scoreSummary } = require('./lib/exam-scoring');
 const { getExamScheduleState, examSessionDeadline } = require('./lib/exam-schedule');
+const { learningTargetMatchesStudent } = require('./lib/academic-targeting');
 const { normalizeStudentName, studentNameIdentity, hasAtLeastThreeNameParts } = require('./lib/student-name');
 const {
   scheduledTimeMillis,
@@ -25,7 +26,7 @@ const {
   assignmentDueDatePassed,
   assignmentSubmissionIsOpen
 } = require('./lib/assignment-schedule');
-const BACKEND_RELEASE = '69.2.6';
+const BACKEND_RELEASE = '69.2.7';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -35,7 +36,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '69-2-6' }
+  labels: { 'platform-release': '69-2-7' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -43,7 +44,7 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '69-2-6' }
+  labels: { 'platform-release': '69-2-7' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
@@ -409,8 +410,13 @@ exports.notifyStudentsOnAssignmentUpdated = onDocumentWritten({document:'assignm
 exports.notifyStudentsOnLectureUpdated = onDocumentWritten({document:'materials/{materialId}',region:'europe-west1',memory:'256MiB'},async event=>{
   const before=event.data?.before.data(),afterData=event.data?.after.data();if(!afterData)return;
   const after={id:event.params.materialId,...afterData};
-  if(after.deliveryMode!=='online'||!['live','upcoming','recording','file'].includes(after.contentType))return;
-  const notice=contentNotification(before,after,'محاضرة','https://saad-ewida-science-platform.vercel.app/online.html','lecture');if(notice)await notifyTargetedStudents(after,notice);
+  const online=after.deliveryMode==='online'&&['live','upcoming','recording','file'].includes(after.contentType);
+  const notice=contentNotification(before,after,online?'محاضرة':'مراجعة',online?'https://saad-ewida-science-platform.vercel.app/online.html':'https://saad-ewida-science-platform.vercel.app/student.html',online?'lecture':'resource');if(notice)await notifyTargetedStudents(after,notice);
+});
+exports.notifyStudentsOnQuestionUpdated = onDocumentWritten({document:'questions/{questionId}',region:'europe-west1',memory:'256MiB'},async event=>{
+  const before=event.data?.before.data(),afterData=event.data?.after.data();if(!afterData)return;
+  const after={id:event.params.questionId,...afterData},notice=contentNotification(before,after,'بنك أسئلة','https://saad-ewida-science-platform.vercel.app/student.html','question');
+  if(notice)await notifyTargetedStudents(after,notice);
 });
 
 exports.archiveExamVersion = onDocumentUpdated({document:'exams/{examId}',region:'europe-west1',memory:'256MiB'},async event=>{
@@ -439,7 +445,7 @@ exports.restoreExamVersion = onCall(CALLABLE_OPTIONS, async request=>{
 
 exports.getPlatformHealth = onCall(CALLABLE_OPTIONS, async request=>{
   await requireStaff(request);const checkedAt=new Date().toISOString();
-  const status={functions:{ok:true,release:BACKEND_RELEASE},database:{ok:false},storage:{ok:false},notifications:{ok:false,teacherTokens:0,studentTokens:0},lastPublished:{frontend:'69.2.6',backend:BACKEND_RELEASE}};
+  const status={functions:{ok:true,release:BACKEND_RELEASE},database:{ok:false},storage:{ok:false},notifications:{ok:false,teacherTokens:0,studentTokens:0},lastPublished:{frontend:'69.2.7',backend:BACKEND_RELEASE}};
   try{await db.collection('settings').doc('platform').get();status.database={ok:true};}catch(error){status.database={ok:false,message:text(error.message,180)};}
   try{const [metadata]=await admin.storage().bucket().getMetadata();status.storage={ok:true,bucket:text(metadata.name,180)};}catch(error){status.storage={ok:false,message:text(error.message,180)};}
   try{const [teacherTokens,studentTokens]=await Promise.all([db.collection('staff_push_tokens').where('active','==',true).count().get(),db.collection('student_push_tokens').where('active','==',true).count().get()]);status.notifications={ok:true,teacherTokens:teacherTokens.data().count,studentTokens:studentTokens.data().count};}catch(error){status.notifications={ok:false,message:text(error.message,180),teacherTokens:0,studentTokens:0};}
@@ -590,21 +596,6 @@ function portalResponse(data, attempts, records = {}) {
   };
 }
 
-function learningTargetMatchesStudent(item = {}, student = {}) {
-  const itemMode = item.deliveryMode === 'online' ? 'online' : (item.deliveryMode === 'center' ? 'center' : 'all');
-  const studentMode = student.deliveryMode === 'online' ? 'online' : 'center';
-  const modeOk = itemMode === 'all' || itemMode === studentMode;
-  const gradeOk = !item.grade || item.grade === 'كل الصفوف' || item.grade === student.grade;
-  const itemScheduleId = text(item.scheduleId, 100);
-  const studentScheduleId = text(student.scheduleId, 100);
-  const groupOk = itemScheduleId && studentScheduleId
-    ? itemScheduleId === studentScheduleId
-    : (!item.group || item.group === 'كل المجموعات' || item.group === student.group);
-  const yearOk = !item.academicYear || !student.academicYear || item.academicYear === student.academicYear;
-  const termOk = !item.term || !student.term || item.term === student.term;
-  return modeOk && gradeOk && groupOk && yearOk && termOk;
-}
-
 function scheduleMatchesStudent(schedule = {}, student = {}) {
   if (schedule.active === false) return false;
   return learningTargetMatchesStudent({
@@ -652,6 +643,60 @@ function publicTransferRequest(request = {}) {
   };
 }
 
+async function canonicalStudentByCode(code) {
+  const normalized = normalizeCode(code);
+  const direct = await db.collection('students').doc(cleanDocId(normalized)).get().catch(() => null);
+  if (direct?.exists) return { id:direct.id, ...direct.data(), studentCode:normalized, code:normalized };
+  for (const field of ['studentCode', 'code']) {
+    const snap = await db.collection('students').where(field, '==', normalized).limit(2).get().catch(() => null);
+    if (snap && !snap.empty) {
+      const doc = snap.docs.find(candidate => candidate.data().active !== false) || snap.docs[0];
+      return { id:doc.id, ...doc.data(), studentCode:normalized, code:normalized };
+    }
+  }
+  return null;
+}
+
+function portalAcademicPatch(student = {}, code = '') {
+  const patch = {
+    studentCode:normalizeCode(code || student.studentCode || student.code),
+    code:normalizeCode(code || student.studentCode || student.code),
+    name:text(student.studentName || student.name,100),
+    studentName:text(student.studentName || student.name,100),
+    grade:text(student.grade,80),
+    group:text(student.group,100),
+    scheduleId:text(student.scheduleId,100),
+    scheduleDays:text(student.scheduleDays,100),
+    scheduleStartTime:text(student.scheduleStartTime,20),
+    scheduleEndTime:text(student.scheduleEndTime,20),
+    academicYear:text(student.academicYear,20),
+    term:text(student.term,40),
+    deliveryMode:student.deliveryMode === 'online' ? 'online' : 'center',
+    paid:student.paid === true,
+    active:student.active !== false
+  };
+  if (student.parentCode) patch.parentCode = normalizeCode(student.parentCode);
+  return patch;
+}
+
+function portalAcademicNeedsRepair(portal = {}, student = {}, code = '') {
+  const expected = portalAcademicPatch(student, code);
+  return ['studentCode','name','studentName','grade','group','scheduleId','scheduleDays','scheduleStartTime','scheduleEndTime','academicYear','term','deliveryMode','paid','active']
+    .some(key => portal[key] !== expected[key]);
+}
+
+async function repairPortalAcademicData(student = {}, code = '') {
+  const patch = portalAcademicPatch(student, code);
+  if (!patch.studentCode) return;
+  const operations = [
+    db.collection('student_portal').doc(cleanDocId(patch.studentCode)).set({ ...patch, repairedAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() }, { merge:true })
+  ];
+  if (patch.parentCode) operations.push(
+    db.collection('parent_portal').doc(cleanDocId(patch.parentCode)).set({ ...patch, repairedAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() }, { merge:true })
+  );
+  await Promise.all(operations).catch(error => console.warn('portal-academic-repair-failed', error?.message || error));
+}
+
 async function getStudentPortalByCode(code) {
   const normalized = normalizeCode(code);
   if (!validLegacyOrStrongCode(normalized)) throw new HttpsError('invalid-argument', 'كود غير صالح.');
@@ -659,16 +704,16 @@ async function getStudentPortalByCode(code) {
   const portalRef = db.collection('student_portal').doc(id);
   const portalSnap = await portalRef.get();
   if (portalSnap.exists) {
-    if (portalSnap.data().active === false) throw new HttpsError('not-found', 'حساب الطالب غير نشط.');
-    const canonicalSnap = await db.collection('students').doc(id).get().catch(() => null);
-    const canonical = canonicalSnap?.exists ? canonicalSnap.data() : {};
-    return { code: normalized, data: { ...portalSnap.data(), ...canonical, studentCode: normalized, code: normalized } };
+    const canonical = await canonicalStudentByCode(normalized);
+    if (canonical?.active === false || (!canonical && portalSnap.data().active === false)) throw new HttpsError('not-found', 'حساب الطالب غير نشط.');
+    const merged = { ...portalSnap.data(), ...(canonical || {}), studentCode:normalized, code:normalized };
+    if (canonical && portalAcademicNeedsRepair(portalSnap.data(), merged, normalized)) await repairPortalAcademicData(merged, normalized);
+    return { code: normalized, data: merged };
   }
   // Older releases sometimes created the student record before the dedicated
   // portal document. Keep those real accounts working and repair them lazily.
-  const studentSnap = await db.collection('students').doc(id).get();
-  if (!studentSnap.exists || studentSnap.data().active === false) throw new HttpsError('not-found', 'لم يتم العثور على الطالب بهذا الكود.');
-  const student = { ...studentSnap.data(), studentCode: normalized, code: normalized };
+  const student = await canonicalStudentByCode(normalized);
+  if (!student || student.active === false) throw new HttpsError('not-found', 'لم يتم العثور على الطالب بهذا الكود.');
   const repaired = portalResponse(student, []);
   await portalRef.set({ ...repaired, parentCode: text(student.parentCode, 40), active: true, repairedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { code: normalized, data: student };
@@ -678,13 +723,24 @@ async function getParentPortalByCode(code) {
   const normalized = normalizeCode(code);
   if (!validLegacyOrStrongCode(normalized)) throw new HttpsError('invalid-argument', 'كود غير صالح.');
   const snap = await db.collection('parent_portal').doc(cleanDocId(normalized)).get();
-  if (snap.exists && snap.data().active !== false) return { code: normalized, data: snap.data() };
+  if (snap.exists) {
+    const portal = snap.data() || {};
+    const canonical = await canonicalStudentByCode(portal.studentCode || portal.code || normalized);
+    if (canonical?.active === false || (!canonical && portal.active === false)) throw new HttpsError('not-found', 'حساب الطالب غير نشط.');
+    const merged = { ...portal, ...(canonical || {}), parentCode:normalized };
+    if (canonical && portalAcademicNeedsRepair(portal, merged, canonical.studentCode || portal.studentCode)) await repairPortalAcademicData(merged, canonical.studentCode || portal.studentCode);
+    return { code: normalized, data: merged };
+  }
   // Current accounts use one code for both portals. This fallback repairs the
   // user experience for records created before parent_portal was introduced or
   // while an older approval function was deployed.
   const studentSnap = await db.collection('student_portal').doc(cleanDocId(normalized)).get();
   if (!studentSnap.exists || studentSnap.data().active === false) throw new HttpsError('not-found', 'لم يتم العثور على التقرير.');
-  return { code: normalized, data: { ...studentSnap.data(), parentCode: normalized } };
+  const portal = studentSnap.data() || {};
+  const canonical = await canonicalStudentByCode(portal.studentCode || portal.code || normalized);
+  const merged = { ...portal, ...(canonical || {}), parentCode:normalized };
+  if (canonical && portalAcademicNeedsRepair(portal, merged, canonical.studentCode || portal.studentCode)) await repairPortalAcademicData(merged, canonical.studentCode || portal.studentCode);
+  return { code: normalized, data: merged };
 }
 
 async function attemptSummaries(studentCode) {
@@ -739,12 +795,12 @@ async function getPortalStudentHandler(request) {
   await rateLimitPublic(`portal-${mode}`, code, request, 8, 35, 60 * 1000);
   const found = mode === 'parent' ? await getParentPortalByCode(code) : await getStudentPortalByCode(code);
   const studentCode = found.data.studentCode || found.data.code;
-  const [attempts, records, assignmentSnap, monthlyRows, onlineContent, groupSnap, transferSnap] = await Promise.all([
+  const [attempts, records, assignmentSnap, monthlyRows, learningContent, groupSnap, transferSnap] = await Promise.all([
     attemptSummaries(studentCode).catch(error => { console.warn('portal-attempts-unavailable', error?.message || error); return []; }),
     studentRecords(studentCode).catch(error => { console.warn('portal-records-unavailable', error?.message || error); return { attendance: [], grades: [], homeworks: [], recitations: [], payments: [] }; }),
     db.collection('assignments').limit(300).get().catch(()=>null),
     getMonthlyLeaderboardRows().catch(error => { console.warn('portal-incentive-unavailable', error?.message || error); return []; }),
-    loadOnlineContentForStudent(found.data, studentCode).catch(error => { console.warn('portal-online-content-unavailable', error?.message || error); return []; }),
+    loadLearningContentForStudent(found.data, studentCode, true).catch(error => { console.warn('portal-learning-content-unavailable', error?.message || error); return { onlineContent:[], learningResources:{ materials:[], questions:[] } }; }),
     db.collection('groups').limit(300).get().catch(()=>null),
     db.collection('student_transfer_requests').where('studentCode', '==', normalizeCode(studentCode)).limit(20).get().catch(()=>null)
   ]);
@@ -779,7 +835,8 @@ async function getPortalStudentHandler(request) {
     ...portalResponse(found.data, attempts, records),
     assignments,
     nextAssignmentPublishAt:nextAssignmentMillis?new Date(nextAssignmentMillis).toISOString():'',
-    onlineContent,
+    onlineContent:learningContent.onlineContent,
+    learningResources:learningContent.learningResources,
     monthlyIncentive,
     transferOptions,
     transferRequest
@@ -962,6 +1019,7 @@ async function linkedRecordsForSchedule(scheduleId) {
     ['assignments','scheduleId'],
     ['exams','scheduleId'],
     ['materials','scheduleId'],
+    ['questions','scheduleId'],
     ['student_transfer_requests','targetScheduleId'],
     ['student_transfer_requests','currentScheduleId']
   ];
@@ -1121,15 +1179,25 @@ exports.getPublicResources = onCall(CALLABLE_OPTIONS, async request => {
     db.collection('questions').limit(1000).get()
   ]);
   const publicTarget = item => item.active !== false
-    && item.access !== 'subscribers'
-    && !['live', 'upcoming', 'recording'].includes(item.contentType);
-  const resourcePayload = item => ({
+    && (item.access === 'public' || (!item.access && !item.scheduleId && (!item.group || item.group === 'كل المجموعات')))
+    && !(item.deliveryMode === 'online' && ['live', 'upcoming', 'recording', 'file'].includes(item.contentType));
+  return {
+    materials: materialsSnap.docs.map(doc => ({ id:doc.id, ...doc.data() })).filter(publicTarget).map(learningResourcePayload),
+    questions: questionsSnap.docs.map(doc => ({ id:doc.id, ...doc.data() })).filter(publicTarget).map(learningResourcePayload)
+  };
+});
+
+function learningResourcePayload(item = {}) {
+  return {
     id: text(item.id, 120),
     title: text(item.title, 220),
     desc: text(item.desc || item.content, 1200),
     content: text(item.content, 3000),
     answer: text(item.answer, 3000),
     grade: text(item.grade || 'كل الصفوف', 80),
+    group: text(item.group || 'كل المجموعات', 100),
+    scheduleId: text(item.scheduleId, 100),
+    academicYear: text(item.academicYear, 20),
     deliveryMode: ['center', 'online'].includes(item.deliveryMode) ? item.deliveryMode : 'all',
     contentType: text(item.contentType, 30),
     term: text(item.term, 40),
@@ -1140,24 +1208,25 @@ exports.getPublicResources = onCall(CALLABLE_OPTIONS, async request => {
     fileUrl: safePublicUrl(item.fileUrl || item.url),
     linkUrl: safePublicUrl(item.linkUrl),
     coverUrl: safePublicUrl(item.coverUrl)
-  });
-  return {
-    materials: materialsSnap.docs.map(doc => ({ id:doc.id, ...doc.data() })).filter(publicTarget).map(resourcePayload),
-    questions: questionsSnap.docs.map(doc => ({ id:doc.id, ...doc.data() })).filter(publicTarget).map(resourcePayload)
   };
-});
+}
 
-async function loadOnlineContentForStudent(student = {}, code = '') {
-  const snap = await db.collection('materials').limit(300).get();
-  const progressSnap = await db.collection('lecture_progress').where('studentCode', '==', code).limit(300).get().catch(() => null);
+async function loadLearningContentForStudent(student = {}, code = '', includeResources = false) {
+  const requests = [
+    db.collection('materials').limit(500).get(),
+    db.collection('lecture_progress').where('studentCode', '==', normalizeCode(code)).limit(300).get().catch(() => null)
+  ];
+  if (includeResources) requests.push(db.collection('questions').limit(1000).get());
+  const [snap, progressSnap, questionSnap] = await Promise.all(requests);
   const progress = new Map(progressSnap ? progressSnap.docs.map(doc => [String(doc.data().lectureId || ''), Number(doc.data().progress || 0)]) : []);
   const now = Date.now();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    .filter(item => ['live','upcoming','recording','file'].includes(item.contentType))
+  const targetedMaterials = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(item => item.active !== false)
-    .filter(item => item.deliveryMode === 'online')
     .filter(item => learningTargetMatchesStudent(item, student))
-    .filter(item => (item.access || 'subscribers') !== 'subscribers' || student.paid === true)
+    .filter(item => item.access !== 'subscribers' || student.paid === true);
+  const onlineContent = targetedMaterials
+    .filter(item => ['live','upcoming','recording','file'].includes(item.contentType))
+    .filter(item => item.deliveryMode === 'online')
     .map(item => {
       const startAt = scheduledTimeMillis(item.startAt);
       const duration = Math.max(0, Number(item.duration || 120)) * 60 * 1000;
@@ -1178,6 +1247,20 @@ async function loadOnlineContentForStudent(student = {}, code = '') {
       prerequisiteUnlocked
     };
     });
+  const learningResources = includeResources ? {
+    materials:targetedMaterials.filter(item => !['live','upcoming','recording','file'].includes(item.contentType)).map(learningResourcePayload),
+    questions:(questionSnap?.docs || []).map(doc => ({ id:doc.id, ...doc.data() }))
+      .filter(item => item.active !== false)
+      .filter(item => learningTargetMatchesStudent(item, student))
+      .filter(item => item.access !== 'subscribers' || student.paid === true)
+      .map(learningResourcePayload)
+  } : { materials:[], questions:[] };
+  return { onlineContent, learningResources };
+}
+
+async function loadOnlineContentForStudent(student = {}, code = '') {
+  const result = await loadLearningContentForStudent(student, code, false);
+  return result.onlineContent;
 }
 
 exports.getOnlineContentForStudent = onCall(CALLABLE_OPTIONS, async request => {
@@ -2002,7 +2085,9 @@ exports.getExamDashboard = onCall(CALLABLE_OPTIONS, async request => {
   const exams = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(exam => examMatchesStudent(exam, found.data))
     .filter(exam => exam.active !== false)
-    .map(exam => ({
+    .map(exam => {
+      const schedule = getExamScheduleState(exam);
+      return {
       id: text(exam.id, 100),
       title: text(exam.title, 200),
       grade: text(exam.grade, 80),
@@ -2013,14 +2098,15 @@ exports.getExamDashboard = onCall(CALLABLE_OPTIONS, async request => {
       closeAt: text(exam.closeAt, 60),
       duration: Math.max(1, Math.min(240, Number(exam.duration || 20))),
       instructions: text(exam.instructions, 1500),
-      pdfUrl: safePublicUrl(exam.pdfUrl || exam.examPdfUrl),
+      pdfUrl: schedule.state === 'open' ? safePublicUrl(exam.pdfUrl || exam.examPdfUrl) : '',
       pdfName: text(exam.pdfName || exam.examPdfName, 220),
       examFormat: ['pdf', 'mixed'].includes(exam.examFormat) ? exam.examFormat : 'questions',
       allowRetake: exam.allowRetake === true,
       maxScore: positiveScore(exam.maxScore,100),
-      scheduleState: getExamScheduleState(exam).state,
+      scheduleState: schedule.state,
       questionCount: Number(exam.questionCount || examQuestionList(exam).length)
-    }));
+    };
+    });
   const [attempts, records] = await Promise.all([attemptSummaries(studentCode), studentRecords(studentCode)]);
   return { student: portalResponse(found.data, attempts, records), exams, serverNow:Date.now() };
 });

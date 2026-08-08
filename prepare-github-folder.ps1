@@ -1,6 +1,6 @@
 param(
   [string]$RepositoryUrl = "https://github.com/byAmrkhaled0/saad-ewida-science-platform.git",
-  [string]$TargetFolder = "saad-ewida-production-v69.2.6"
+  [string]$TargetFolder = "saad-ewida-production-v69.2.7"
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,7 +31,7 @@ if (Test-Path $TargetRoot) {
 Write-Host "Cloning the existing GitHub repository..." -ForegroundColor Cyan
 Invoke-Checked -Label "git clone" -Action { git clone $RepositoryUrl $TargetRoot }
 
-Write-Host "Replacing repository files with V69.2.6 while preserving .git..." -ForegroundColor Cyan
+Write-Host "Replacing repository files with V69.2.7 while preserving .git..." -ForegroundColor Cyan
 Get-ChildItem -LiteralPath $TargetRoot -Force |
   Where-Object { $_.Name -ne ".git" } |
   Remove-Item -Recurse -Force

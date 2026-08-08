@@ -12,7 +12,7 @@ const requiredFiles = [
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
-  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
+  'functions/index.js', 'functions/lib/academic-targeting.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/content-visibility.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
 
 const failures = [];
@@ -29,7 +29,7 @@ const jsFiles = [
   'assets/app.js', 'assets/admin.js', 'assets/exam-editor.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
-  'functions/index.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
+  'functions/index.js', 'functions/lib/academic-targeting.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/content-visibility.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
 for (const relative of jsFiles) {
@@ -392,9 +392,12 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '69.2.6' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.6'") || !read('service-worker.js').includes('mf-science-v6926-paginated-admin') || [...functionsSource.matchAll(/'platform-release': '69-2-6'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '69.2.6'")) fail('V69.2.6 frontend/backend release identifiers are invalid');
+if (packageInfo.version !== '69.2.7' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.2.7'") || !read('service-worker.js').includes('mf-science-v6927-content-visibility') || [...functionsSource.matchAll(/'platform-release': '69-2-7'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '69.2.7'")) fail('V69.2.7 frontend/backend release identifiers are invalid');
 if (!read('assets/v56-fixes.js').includes('saadExamFilterV6921') || !read('assets/v56-fixes.js').includes('saadExamGroupV6921') || !read('assets/v56-fixes.js').includes("_attendance:'missing'")) fail('V69.2.1 exam attendance filters are incomplete');
 if (!adminSourceCode.includes('adminRecordSections') || !adminSourceCode.includes('ensureAdminRecords') || !adminSourceCode.includes('loadNextAdminRecordType') || !firebaseSyncSource.includes('loadStaffRecordPage') || !read('scripts/build.js').includes('const adminCssParts = cssParts')) fail('V69.2.6 paginated admin records or complete admin stylesheet is incomplete');
+if (!functionsSource.includes("require('./lib/academic-targeting')") || !functionsSource.includes('canonicalStudentByCode') || !functionsSource.includes('learningResources:learningContent.learningResources') || !appSourceCode.includes('data-student-tab="resources"')) fail('V69.2.7 targeted learning-content delivery is incomplete');
+if (!adminSourceCode.includes("saveLearningItem('assignments'") || !adminSourceCode.includes("saveLearningItem('materials'") || !firebaseSyncSource.includes('saveLearningItem:async')) fail('V69.2.7 single-document learning saves are incomplete');
+if (!read('assets/exam-editor.js').includes("timeZone='Africa/Cairo'") || !appSourceCode.includes('examScheduleLabel(exam)')) fail('V69.2.7 Cairo exam scheduling is incomplete');
 if (!adminSourceCode.includes('function adminEditorIsOpen') || !adminSourceCode.includes("form.dataset.saving==='true'") || !firebaseSyncSource.includes('saveExam:async exam') || !functionsSource.includes('function examQuestionList(exam)')) fail('Stable single-document exam editing safeguards are incomplete');
 if (!adminSourceCode.includes("sessionStorage.setItem('saad-admin-student-filters'") || !adminSourceCode.includes("sameAcademicValue(student.grade,grade)")) fail('Student grade filters are not durable or academically normalized');
 if (!read('scripts/build.js').includes("require('esbuild')") || !read('scripts/build.js').includes('minify:true')) fail('Production JavaScript and CSS minification is missing');

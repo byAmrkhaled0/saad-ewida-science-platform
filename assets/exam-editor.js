@@ -76,12 +76,45 @@
     return {ok:true,index:-1,error:'',questions,text};
   }
 
-  function localDateTimeToIso(value){
-    const input=String(value||'').trim();
-    if(!input)return {ok:true,value:''};
-    const date=new Date(input);
-    return Number.isNaN(date.getTime())?{ok:false,value:''}:{ok:true,value:date.toISOString()};
+  function timeZoneDateParts(value,timeZone='Africa/Cairo'){
+    const date=value instanceof Date?value:new Date(value);
+    if(Number.isNaN(date.getTime()))return null;
+    const parts=new Intl.DateTimeFormat('en-CA',{
+      timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+    }).formatToParts(date).reduce((output,part)=>(part.type!=='literal'&&(output[part.type]=part.value),output),{});
+    return parts;
   }
 
-  return {ARABIC_LABELS,answerIndex,compactLine,normalizeQuestion,serializeQuestions,localDateTimeToIso};
+  function timeZoneOffsetMillis(instant,timeZone='Africa/Cairo'){
+    const parts=timeZoneDateParts(instant,timeZone);
+    if(!parts)return NaN;
+    const shownAsUtc=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day),Number(parts.hour),Number(parts.minute),Number(parts.second));
+    return shownAsUtc-Math.floor(new Date(instant).getTime()/1000)*1000;
+  }
+
+  function localDateTimeToIso(value,timeZone='Africa/Cairo'){
+    const input=String(value||'').trim();
+    if(!input)return {ok:true,value:''};
+    const match=input.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if(!match)return {ok:false,value:''};
+    const wanted={year:Number(match[1]),month:Number(match[2]),day:Number(match[3]),hour:Number(match[4]),minute:Number(match[5]),second:Number(match[6]||0)};
+    const naive=Date.UTC(wanted.year,wanted.month-1,wanted.day,wanted.hour,wanted.minute,wanted.second);
+    if(wanted.month<1||wanted.month>12||wanted.day<1||wanted.day>31||wanted.hour>23||wanted.minute>59||wanted.second>59)return {ok:false,value:''};
+    let instant=naive;
+    for(let attempt=0;attempt<3;attempt+=1){
+      const offset=timeZoneOffsetMillis(instant,timeZone);
+      if(!Number.isFinite(offset))return {ok:false,value:''};
+      instant=naive-offset;
+    }
+    const actual=timeZoneDateParts(instant,timeZone);
+    const valid=actual&&['year','month','day','hour','minute','second'].every(key=>Number(actual[key])===wanted[key]);
+    return valid?{ok:true,value:new Date(instant).toISOString()}:{ok:false,value:''};
+  }
+
+  function isoToLocalDateTime(value,timeZone='Africa/Cairo'){
+    const parts=timeZoneDateParts(value,timeZone);
+    return parts?`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`:'';
+  }
+
+  return {ARABIC_LABELS,answerIndex,compactLine,normalizeQuestion,serializeQuestions,localDateTimeToIso,isoToLocalDateTime};
 });

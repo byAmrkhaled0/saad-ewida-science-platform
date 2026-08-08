@@ -1,0 +1,23 @@
+# شغّل PowerShell داخل مجلد المشروع V69.2.7 ثم نفّذ الأوامر التالية بالترتيب.
+$ErrorActionPreference = "Stop"
+$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"
+node --version
+npm install
+npm test
+npm run build
+npm --prefix functions ci --no-audit --no-fund
+npx --yes firebase-tools@latest login
+npx --yes firebase-tools@latest use saad-ewida-science-platform
+npm run firebase:deploy:all
+npm run verify:production
+
+# لو المجلد متصل بريبو GitHub:
+git status
+git add -A
+git commit -m "Fix targeted content delivery and Cairo schedules V69.2.7"
+git push origin main
+
+# بعد النشر اختبر بكود طالب حقيقي:
+# 1) امتحان منشور للصف والمجموعة من 11 صباحًا إلى 9 مساءً.
+# 2) واجب ومحاضرة ومراجعة وبنك أسئلة لنفس المجموعة.
+# 3) افتح student.html وexams.html بالكود وتأكد أن المحتوى ظهر.

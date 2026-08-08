@@ -411,12 +411,12 @@
       student.paymentHistory=paymentRecords.sort((a,b)=>String(b.monthKey||'').localeCompare(String(a.monthKey||'')));
       const mergedGrades=new Map();attempts.filter(row=>row.score!==null&&row.score!==undefined&&row.score!=='').forEach(row=>mergedGrades.set(String(row.attemptId||row.id),{...row,exam:row.exam||row.examTitle||'امتحان',date:row.date||String(row.submittedAt||'').slice(0,10)}));grades.forEach(row=>mergedGrades.set(String(row.attemptId||row.id),row));
       student.attendance=attendance;student.grades=[...mergedGrades.values()];student.homeworks=homeworks;student.recitations=recitations;student.examAttempts=attempts;
-      student.assignments=assignments.filter(item=>assignmentIsReleased(item)
-        &&(!item.grade||item.grade==='كل الصفوف'||item.grade===student.grade)
-        &&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===student.deliveryMode)
-        &&((item.scheduleId&&student.scheduleId)?item.scheduleId===student.scheduleId:(!item.group||item.group==='كل المجموعات'||item.group===student.group))
-        &&(!item.academicYear||!student.academicYear||item.academicYear===student.academicYear)
-        &&(!item.term||!student.term||item.term===student.term)).slice(-100);
+      const targetsStudent=item=>typeof window.learningTargetMatchesStudentClient==='function'
+        ? window.learningTargetMatchesStudentClient(item,student)
+        : (!item.grade||item.grade==='كل الصفوف'||item.grade===student.grade)
+          &&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===student.deliveryMode)
+          &&((item.scheduleId&&student.scheduleId)?item.scheduleId===student.scheduleId:(!item.group||item.group==='كل المجموعات'||item.group===student.group));
+      student.assignments=assignments.filter(item=>assignmentIsReleased(item)&&targetsStudent(item)).slice(-100);
       return student;
     }
 
@@ -641,6 +641,17 @@
       loadStaffRecords:async()=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordCollections();},
       loadStaffRecordPage:async(type,options={})=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordPage(type,options);},
       saveSiteData:async(payload,options={})=>syncPayloadToCollections(payload,options),
+      saveLearningItem:async(collection,item)=>{
+        const allowed=new Set(['materials','questions','assignments']);
+        if(!allowed.has(collection))throw new Error('Invalid learning collection');
+        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
+        const id=cleanDocId(item?.id),title=String(item?.title||'').trim();
+        if(!id||!title)throw new Error('Invalid learning item');
+        const body={...item,id,updatedBy:profile.email||profile.uid,updatedAt:serverTime()};
+        await retryTransient(()=>db.collection(collection).doc(id).set(body,{merge:true}),1);
+        seedFingerprint(collection,id,{...item,id});
+        return {...item,id,updatedAt:nowIso()};
+      },
       saveExam:async exam=>{
         const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
         const id=cleanDocId(exam?.id);if(!id||!String(exam?.title||'').trim())throw new Error('Invalid exam data');
