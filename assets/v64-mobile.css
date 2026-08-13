@@ -464,3 +464,23 @@
     border-bottom: 2px solid #0f6973 !important;
   }
 }
+/* v69.3: immediate touch feedback and lower mobile paint cost */
+button,.btn,.small-btn,a[role="button"],summary{
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+button:active,.btn:active,.small-btn:active,a[role="button"]:active{
+  transform:scale(.985)!important;
+  transition-duration:.04s!important;
+}
+button:disabled,.btn[disabled],.small-btn[disabled]{
+  cursor:wait;
+  pointer-events:none;
+}
+@media(max-width:760px){
+  .admin-clean-list>article,.professional-student-card,.payment-check-card,.exam-result-row{
+    content-visibility:auto;
+    contain-intrinsic-size:120px;
+  }
+  .card:hover,.pro-hover:hover,.btn:hover{transform:none}
+}

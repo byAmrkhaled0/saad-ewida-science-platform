@@ -113,6 +113,8 @@
       createStudentAccess:callable('createStudentAccess'),
       prepareHomeworkUpload:callable('prepareHomeworkUpload'),
       registerHomeworkSubmission:callable('registerHomeworkSubmission'),
+      reviewHomeworkSubmission:callable('reviewHomeworkSubmission'),
+      migrateStudentCodeSafely:callable('migrateStudentCodeSafely'),
       createBackupNow:callable('createBackupNow'),
       listAutomaticBackups:callable('listAutomaticBackups'),
       getBackupDownloadUrl:callable('getBackupDownloadUrl'),
@@ -682,11 +684,8 @@
         return {...paymentRecord,updatedAt:nowIso()};
       },
       reviewHomeworkSubmission:async(id,review)=>{
-        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
-        const patch={status:String(review?.status||'قيد المراجعة').slice(0,60),approved:review?.approved===true,score:review?.score===''||review?.score===undefined?null:Math.max(0,Math.min(100,Number(review.score))),teacherComment:String(review?.teacherComment||'').slice(0,800),reviewedBy:profile.email||profile.uid,reviewedAt:serverTime(),updatedAt:serverTime()};
-        await db.collection('homework_submissions').doc(cleanDocId(id)).set(patch,{merge:true});
-        await markLeaderboardDirty('homework-reviewed');
-        return {...patch,reviewedAt:nowIso(),updatedAt:nowIso()};
+        if(!calls.reviewHomeworkSubmission)throw new Error('Secure homework review service is unavailable');
+        return calls.reviewHomeworkSubmission({id:cleanDocId(id),...review});
       },
       saveGroup:async group=>{
         if(!calls.saveGroupSchedule)throw new Error('Secure schedule service is unavailable');
@@ -707,10 +706,8 @@
         return calls.reviewStudentTransferRequest(payload);
       },
       createStudentAccess:async student=>{
-        if(calls.createStudentAccess){try{return await retryTransient(()=>calls.createStudentAccess(student),1);}catch(error){
-          const raw=String(error?.code||'')+' '+String(error?.message||'');if(/invalid-argument|permission-denied|unauthenticated|already-exists/i.test(raw))throw error;
-        }}
-        return createStudentAccessDirect(student);
+        if(!calls.createStudentAccess)throw new Error('Secure student registration service is unavailable');
+        return retryTransient(()=>calls.createStudentAccess(student),1);
       },
       createBooking:async booking=>{
         if(!calls.createBooking)throw new Error('Secure booking function is unavailable');
@@ -726,10 +723,8 @@
         const source=input&&typeof input==='object'?input:{code:input};
         const code=normalizeCode(source.code||source.id||source.firestoreId||'');
         const bookingId=String(source.firestoreId||source.id||code).trim();
-        let remoteError=null;
-        if(calls.approveBooking){try{return await retryTransient(()=>calls.approveBooking({code,bookingId}),1);}catch(error){remoteError=error;const raw=`${error?.code||''} ${error?.message||''}`;if(/permission-denied|unauthenticated|invalid-argument|not-found/i.test(raw))throw error;}}
-        try{return await approveBookingDirect({...source,code,firestoreId:bookingId});}
-        catch(error){error.remoteError=remoteError;throw remoteError||error;}
+        if(!calls.approveBooking)throw new Error('Secure booking approval service is unavailable');
+        return retryTransient(()=>calls.approveBooking({code,bookingId}),1);
       },
       rejectBooking:async code=>{if(!calls.rejectBooking)throw new Error('Secure booking rejection function is unavailable');return calls.rejectBooking({code:normalizeCode(code)});},
       subscribeToBookings:handler=>db.collection('bookings').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>handler(snap.docs.map(doc=>({...doc.data(),id:doc.id,firestoreId:doc.id})),snap.docChanges()),error=>console.warn('booking-listener',error)),
@@ -757,21 +752,13 @@
       setStaffAccountState:(uid,active)=>calls.setStaffAccountState({uid,active}),
       getBookingStatus:async code=>{
         const normalized=normalizeCode(code);
-        if(calls.getBookingStatus){try{return await calls.getBookingStatus({code:normalized});}catch(error){
-          const raw=String(error?.code||'')+' '+String(error?.message||'');if(/invalid-argument|resource-exhausted/i.test(raw))throw error;
-        }}
-        const snap=await db.collection('booking_status').doc(cleanDocId(normalized)).get();return snap.exists?{code:normalized,...snap.data()}:null;
+        if(!calls.getBookingStatus)throw new Error('Secure booking status service is unavailable');
+        return calls.getBookingStatus({code:normalized});
       },
       saveReview:async review=>{if(!calls.createReview)throw new Error('Secure review function is unavailable');return calls.createReview(review);},
       recordClassProgress:async record=>{
-        let directError=null;
-        try{return await retryTransient(()=>recordClassProgressDirect(record),1);}
-        catch(error){directError=error;}
-        if(calls.recordClassProgress){
-          try{return await retryTransient(()=>calls.recordClassProgress(record),1);}
-          catch(error){error.directError=directError;throw error;}
-        }
-        throw directError||new Error('Class progress service is unavailable');
+        if(!calls.recordClassProgress)throw new Error('Secure class progress service is unavailable');
+        return retryTransient(()=>calls.recordClassProgress(record),1);
       },
       getExamDashboard:async studentCode=>{if(!calls.getExamDashboard)throw new Error('Secure exam dashboard function is unavailable');return calls.getExamDashboard({studentCode:normalizeCode(studentCode)});},
       startSecureExam:async(examId,studentCode)=>{if(!calls.startExam)throw new Error('Secure start exam function is unavailable');return calls.startExam({examId,studentCode:normalizeCode(studentCode)});},
@@ -817,28 +804,13 @@
       reportClientError:payload=>calls.reportClientError?calls.reportClientError(payload):Promise.resolve(null),
       deleteDocument:async(collection,id)=>{if(collection&&id)await db.collection(collection).doc(cleanDocId(id)).delete();},
       deleteStudentSafely:async student=>{
-        let callableError=null;
-        if(calls.deleteStudentSafely){
-          try{return await calls.deleteStudentSafely({studentCode:normalizeCode(student?.studentCode||student?.code||student?.id)});}
-          catch(error){callableError=error;}
-        }
-        try{return await deleteStudentSafelyDirect(student);}
-        catch(error){error.callableError=callableError;throw error;}
+        if(!calls.deleteStudentSafely)throw new Error('Secure student deletion service is unavailable');
+        return calls.deleteStudentSafely({studentCode:normalizeCode(student?.studentCode||student?.code||student?.id)});
       },
       deleteStudentPortals:async student=>window.MFCloud.deleteStudentSafely(student),
       migrateStudentCode:async(oldCode,newCode,student)=>{
-        const oldId=cleanDocId(normalizeCode(oldCode)),newId=cleanDocId(normalizeCode(newCode));if(!oldId||!newId||oldId===newId)return;
-        const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
-        const oldAttempts=db.collection('student_attempts').doc(oldId),newAttempts=db.collection('student_attempts').doc(newId);
-        const [summary,summaryDocs,attempts,grades,attendance,homeworks,recitations,paymentRecords]=await Promise.all([
-          oldAttempts.get().catch(()=>null),oldAttempts.collection('attempts').get().catch(()=>null),db.collection('exam_attempts').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),
-          db.collection('grades').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('attendance').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),
-          db.collection('homework_submissions').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('recitations').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null),db.collection('payment_records').where('studentCode','==',normalizeCode(oldCode)).get().catch(()=>null)
-        ]);
-        const ops=[];if(summary?.exists)ops.push(batch=>batch.set(newAttempts,{...summary.data(),studentCode:normalizeCode(newCode),updatedAt:serverTime()},{merge:true}));
-        summaryDocs?.forEach(doc=>{ops.push(batch=>batch.set(newAttempts.collection('attempts').doc(doc.id),{...doc.data(),studentCode:normalizeCode(newCode)},{merge:true}));ops.push(batch=>batch.delete(doc.ref));});if(summary?.exists)ops.push(batch=>batch.delete(summary.ref));
-        [attempts,grades,attendance,homeworks,recitations,paymentRecords].forEach(snap=>snap?.forEach(doc=>ops.push(batch=>batch.update(doc.ref,{studentCode:normalizeCode(newCode),updatedAt:serverTime()}))));
-        ops.push(batch=>batch.delete(db.collection('students').doc(oldId)));ops.push(batch=>batch.delete(db.collection('student_portal').doc(oldId)));ops.push(batch=>batch.delete(db.collection('parent_portal').doc(oldId)));ops.push(batch=>batch.delete(db.collection('payments').doc(oldId)));if(student)pushStudentOps(ops,student);await commitOperations(ops);
+        if(!calls.migrateStudentCodeSafely)throw new Error('Secure student migration service is unavailable');
+        return calls.migrateStudentCodeSafely({oldCode:normalizeCode(oldCode),newCode:normalizeCode(newCode)});
       },
       getActivityLog:async(limit=50)=>{const snap=await db.collection('activityLog').orderBy('createdAt','desc').limit(Math.min(Number(limit)||50,200)).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));},
       getClientErrors:async(limit=100)=>{const snap=await db.collection('client_errors').orderBy('createdAt','desc').limit(Math.min(Number(limit)||100,300)).get();return snap.docs.map(doc=>({id:doc.id,...doc.data()}));},

@@ -1,0 +1,21 @@
+# PowerShell — من داخل مجلد المشروع
+
+npm ci
+npm test
+npm run build
+npm --prefix functions ci
+
+# انشر Functions أولًا حتى لا تصل الواجهة الجديدة إلى Backend قديم
+firebase deploy --project saad-ewida-science-platform --only functions
+
+# ثم القواعد والفهارس
+firebase deploy --project saad-ewida-science-platform --only firestore:rules,firestore:indexes,storage
+
+# Vercel
+vercel --prod
+
+# بديل ينفذ فحوص المشروع والنشر المتدرج
+powershell -ExecutionPolicy Bypass -File .\deploy-production.ps1
+
+# بعد النشر
+npm run verify:production

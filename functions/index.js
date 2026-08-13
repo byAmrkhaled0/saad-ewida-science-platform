@@ -26,7 +26,7 @@ const {
   assignmentDueDatePassed,
   assignmentSubmissionIsOpen
 } = require('./lib/assignment-schedule');
-const BACKEND_RELEASE = '69.2.7';
+const BACKEND_RELEASE = '69.4.0';
 // Callable endpoints must answer the browser's unauthenticated OPTIONS
 // preflight. Authentication/rate limits are enforced inside each handler, so
 // accepting browser origins here does not grant access to protected actions.
@@ -36,7 +36,7 @@ const CALLABLE_OPTIONS = {
   invoker: 'public',
   cors: true,
   enforceAppCheck: false,
-  labels: { 'platform-release': '69-2-7' }
+  labels: { 'platform-release': '69-4-0' }
 };
 const HTTP_BRIDGE_OPTIONS = {
   region: 'europe-west1',
@@ -44,14 +44,14 @@ const HTTP_BRIDGE_OPTIONS = {
   memory: '512MiB',
   invoker: 'public',
   cors: true,
-  labels: { 'platform-release': '69-2-7' }
+  labels: { 'platform-release': '69-4-0' }
 };
 const HTTP_BRIDGE_ACTIONS = new Set([
   'getPortalStudent', 'getPublicResources', 'getOnlineContentForStudent', 'recordLectureProgress',
   'getPublicLeaderboard', 'createAttendanceSession', 'claimAttendanceSession', 'createStudentAccess',
   'createBooking', 'approveBooking', 'getBookingStatus', 'rejectBooking', 'createReview',
   'recordClassProgress', 'getExamDashboard', 'startExam', 'syncExamSession', 'submitExam', 'prepareHomeworkUpload',
-  'registerHomeworkSubmission', 'reportClientError', 'createBackupNow', 'listAutomaticBackups',
+  'registerHomeworkSubmission', 'reviewHomeworkSubmission', 'migrateStudentCodeSafely', 'reportClientError', 'createBackupNow', 'listAutomaticBackups',
   'getBackupDownloadUrl', 'restoreAutomaticBackup', 'deleteStudentSafely', 'registerTeacherPushToken', 'registerStudentPushToken',
   'listStaffAccounts', 'upsertStaffAccount', 'setStaffAccountState',
   'createStudentTransferRequest', 'reviewStudentTransferRequest', 'saveGroupSchedule', 'deleteGroupSchedule'
@@ -110,9 +110,10 @@ function randomNumericCode(length = 8) {
 }
 
 function publicStudentName(value) {
-  // The teacher requested the leaderboard to use the exact full student name
-  // saved on the platform instead of shortening the family name to an initial.
-  return text(value, 80).replace(/\s+/g, ' ').trim();
+  const parts = text(value, 80).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1].charAt(0)}.`;
 }
 
 function duplicateStudentNameError() {
@@ -262,11 +263,9 @@ exports.listStaffAccounts = onCall(CALLABLE_OPTIONS, async request => {
 });
 
 exports.upsertStaffAccount = onCall(CALLABLE_OPTIONS, async request => {
-  const actor = await requireStaff(request, ['admin', 'teacher']);
+  const actor = await requireStaff(request, ['admin']);
   const body = request.data || {}, email = text(body.email, 200).toLowerCase(), name = text(body.name, 100);
-  // A full-access teacher can manage assistants, but only an administrator
-  // may create another full-access teacher account.
-  const role = body.role === 'teacher' && actor.role === 'admin' ? 'teacher' : 'assistant';
+  const role = body.role === 'teacher' ? 'teacher' : 'assistant';
   const permissions = role === 'teacher' ? [...STAFF_PERMISSION_KEYS] : cleanStaffPermissions(body.permissions);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpsError('invalid-argument', 'البريد الإلكتروني غير صالح.');
   let user;
@@ -301,9 +300,15 @@ exports.upsertStaffAccount = onCall(CALLABLE_OPTIONS, async request => {
 });
 
 exports.setStaffAccountState = onCall(CALLABLE_OPTIONS, async request => {
-  const actor = await requireStaff(request, ['admin', 'teacher']);
+  const actor = await requireStaff(request, ['admin']);
   const uid = text(request.data?.uid, 128), active = request.data?.active === true;
   if (!uid || uid === actor.uid) throw new HttpsError('invalid-argument', 'لا يمكن إيقاف الحساب المستخدم حاليًا.');
+  const target = await db.collection('users').doc(uid).get();
+  if (!target.exists) throw new HttpsError('not-found', 'حساب فريق العمل غير موجود.');
+  if (!active && target.data()?.role === 'admin') {
+    const activeAdmins = await db.collection('users').where('role', '==', 'admin').where('active', '==', true).limit(2).get();
+    if (activeAdmins.size <= 1) throw new HttpsError('failed-precondition', 'لا يمكن تعطيل آخر حساب مدير نشط.');
+  }
   await admin.auth().updateUser(uid, { disabled: !active });
   await db.collection('users').doc(uid).set({ active, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
   return { uid, active };
@@ -588,7 +593,7 @@ function portalResponse(data, attempts, records = {}) {
       paymentDate:text(item.paymentDate,40),amount:Number(item.amount||0),method:text(item.method,40),notes:text(item.notes,300)
     })) : [],
     notes: text(data.notes, 1500),
-    attendance: Array.isArray(records.attendance) ? records.attendance.slice(-120) : (Array.isArray(data.attendance) ? data.attendance.slice(-120) : []),
+    attendance: Array.isArray(records.attendance) ? records.attendance : (Array.isArray(data.attendance) ? data.attendance : []),
     grades: mergedGrades.size ? [...mergedGrades.values()].sort((a,b)=>String(a.date||a.submittedAt||'').localeCompare(String(b.date||b.submittedAt||''))).slice(-120) : (Array.isArray(data.grades) ? data.grades.slice(-120) : []),
     homeworks: Array.isArray(records.homeworks) ? records.homeworks.slice(-120) : (Array.isArray(data.homeworks) ? data.homeworks.slice(-120) : []),
     recitations: Array.isArray(records.recitations) ? records.recitations.slice(-120) : (Array.isArray(data.recitations) ? data.recitations.slice(-120) : []),
@@ -772,13 +777,13 @@ async function studentRecords(studentCode) {
     let query = db.collection(collection).where('studentCode', '==', normalized);
     if (orderBy) query = query.orderBy(orderBy, 'desc');
     try {
-      const snap = await query.limit(250).get();
+      const snap = await query.get();
       return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } catch (error) {
       // Keep portals available during the short interval in which a newly
       // deployed composite index is still building.
       if (!orderBy || !/failed-precondition|index/i.test(`${error?.code || ''} ${error?.message || ''}`)) throw error;
-      const snap = await db.collection(collection).where('studentCode', '==', normalized).limit(250).get();
+      const snap = await db.collection(collection).where('studentCode', '==', normalized).get();
       return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
   };
@@ -798,7 +803,7 @@ async function getPortalStudentHandler(request) {
   const [attempts, records, assignmentSnap, monthlyRows, learningContent, groupSnap, transferSnap] = await Promise.all([
     attemptSummaries(studentCode).catch(error => { console.warn('portal-attempts-unavailable', error?.message || error); return []; }),
     studentRecords(studentCode).catch(error => { console.warn('portal-records-unavailable', error?.message || error); return { attendance: [], grades: [], homeworks: [], recitations: [], payments: [] }; }),
-    db.collection('assignments').limit(300).get().catch(()=>null),
+    db.collection('assignments').get().catch(()=>null),
     getMonthlyLeaderboardRows().catch(error => { console.warn('portal-incentive-unavailable', error?.message || error); return []; }),
     loadLearningContentForStudent(found.data, studentCode, true).catch(error => { console.warn('portal-learning-content-unavailable', error?.message || error); return { onlineContent:[], learningResources:{ materials:[], questions:[] } }; }),
     db.collection('groups').limit(300).get().catch(()=>null),
@@ -808,7 +813,7 @@ async function getPortalStudentHandler(request) {
     ? assignmentSnap.docs.map(doc=>({id:doc.id,...doc.data()})).filter(item=>item.active!==false&&learningTargetMatchesStudent(item,found.data))
     : [];
   const todayKey = cairoDateKey(new Date());
-  const assignments = targetedAssignments.filter(item=>assignmentIsReleased(item)).slice(-100).map(item=>({
+  const assignments = targetedAssignments.filter(item=>assignmentIsReleased(item)).map(item=>({
     ...item,
     submissionClosed: assignmentDueDatePassed(item, todayKey)
   }));
@@ -1501,6 +1506,7 @@ exports.claimAttendanceSession = onCall(CALLABLE_OPTIONS, async request => {
 
 exports.createStudentAccess = onCall(CALLABLE_OPTIONS, async request => {
   const staff = await requireStaff(request);
+  requireStaffSection(staff, 'students');
   const body = request.data || {};
   const name = text(body.studentName || body.name, 100).replace(/\s+/g, ' ').trim();
   const parentPhone = digits(body.parentPhone);
@@ -1974,6 +1980,7 @@ exports.getBookingStatus = onCall(CALLABLE_OPTIONS, async request => {
 
 exports.rejectBooking = onCall(CALLABLE_OPTIONS, async request => {
   const staff = await requireStaff(request);
+  requireStaffSection(staff, 'bookings');
   const bookingCode = normalizeCode(request.data && request.data.code);
   if (!validLegacyOrStrongCode(bookingCode)) throw new HttpsError('invalid-argument', 'كود الحجز غير صالح.');
   const bookingRef = db.collection('bookings').doc(cleanDocId(bookingCode));
@@ -2024,6 +2031,7 @@ exports.createReview = onCall(CALLABLE_OPTIONS, async request => {
 
 exports.recordClassProgress = onCall(CALLABLE_OPTIONS, async request => {
   const staff = await requireStaff(request);
+  requireStaffSection(staff, 'attendance', 'assignments');
   const body = request.data || {};
   const type = body.type === 'recitation' ? 'recitation' : (body.type === 'homework' ? 'homework' : '');
   const studentCode = normalizeCode(body.studentCode);
@@ -2504,10 +2512,10 @@ exports.registerHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
     await tokenRef.delete().catch(()=>{});
     throw new HttpsError('deadline-exceeded', 'انتهى آخر موعد لتسليم هذا الواجب.');
   }
-  const ref = assignmentId ? db.collection('homework_submissions').doc(cleanDocId(`${studentCode}_${assignmentId}`)) : db.collection('homework_submissions').doc();
+  const ref = db.collection('homework_submissions').doc(cleanDocId(`${studentCode}_${assignmentId}`));
+  const lockRef = db.collection('homework_submission_locks').doc(cleanDocId(`${studentCode}_${assignmentId}`));
   const submittedAt = new Date().toISOString();
-  const batch = db.batch();
-  batch.set(ref, {
+  const submission = {
     id: ref.id,
     studentCode,
     studentName: text(found.data.studentName || found.data.name, 100),
@@ -2533,10 +2541,135 @@ exports.registerHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
     approved: false,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
-  });
-  batch.delete(tokenRef);
-  await batch.commit();
+  };
+  try {
+    await db.runTransaction(async tx => {
+      const [latestToken, lock, existing] = await Promise.all([tx.get(tokenRef), tx.get(lockRef), tx.get(ref)]);
+      if (!latestToken.exists) throw new HttpsError('permission-denied', 'انتهت صلاحية رفع الملف. ابدأ الرفع من جديد.');
+      const latestTokenData = latestToken.data() || {};
+      if (latestTokenData.studentCode !== studentCode || (latestTokenData.expiresAt?.toMillis?.() || 0) <= Date.now()) {
+        throw new HttpsError('permission-denied', 'انتهت صلاحية رفع الملف. ابدأ الرفع من جديد.');
+      }
+      if (lock.exists || existing.exists) throw new HttpsError('already-exists', 'تم تسليم هذا الواجب بالفعل ولا يمكن استبداله.');
+      tx.create(lockRef, { studentCode, assignmentId, submissionId:ref.id, filePath, createdAt:FieldValue.serverTimestamp() });
+      tx.create(ref, submission);
+      tx.delete(tokenRef);
+    });
+  } catch (error) {
+    if (error instanceof HttpsError && error.code === 'already-exists') await bucket.file(filePath).delete().catch(()=>{});
+    throw error;
+  }
   return { id: ref.id, ok: true };
+});
+
+exports.reviewHomeworkSubmission = onCall(CALLABLE_OPTIONS, async request => {
+  const staff = await requireStaff(request);
+  requireStaffSection(staff, 'assignments');
+  const submissionId = cleanDocId(text(request.data?.id || request.data?.submissionId, 160));
+  if (!submissionId) throw new HttpsError('invalid-argument', 'تسليم الواجب غير صالح.');
+  const rawScore = request.data?.score;
+  const score = rawScore === '' || rawScore === null || rawScore === undefined ? null : Number(rawScore);
+  if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) throw new HttpsError('invalid-argument', 'الدرجة يجب أن تكون بين 0 و100.');
+  const submissionRef = db.collection('homework_submissions').doc(submissionId);
+  const historyRef = db.collection('homework_review_history').doc();
+  const leaderboardStateRefLocal = db.collection('_system').doc('leaderboard');
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(submissionRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'تسليم الواجب غير موجود.');
+    const old = snap.data() || {};
+    const reviewedAt = new Date().toISOString();
+    const patch = {
+      status:text(request.data?.status || 'تمت المراجعة', 60), approved:request.data?.approved !== false,
+      score, maxScore:100, percentage:score, teacherComment:text(request.data?.teacherComment, 800),
+      reviewedBy:staff.email || staff.uid, reviewerUid:staff.uid, reviewedAt,
+      updatedAt:FieldValue.serverTimestamp()
+    };
+    tx.update(submissionRef, patch);
+    if (score !== null) {
+      const gradeRef = db.collection('grades').doc(`homework_${submissionId}`);
+      tx.set(gradeRef, {
+        id:gradeRef.id, type:'homework', sourceId:submissionId, assignmentId:text(old.assignmentId,120),
+        studentCode:normalizeCode(old.studentCode), studentName:text(old.studentName,100), title:text(old.assignmentTitle || old.title,160),
+        score, maxScore:100, percentage:score, status:patch.status, submittedAt:old.submittedAt || '', gradedAt:reviewedAt,
+        date:cairoDateKey(reviewedAt), monthKey:cairoDateKey(reviewedAt).slice(0,7), academicYear:text(old.academicYear,20), term:text(old.term,40),
+        reviewerUid:staff.uid, updatedAt:FieldValue.serverTimestamp(), createdAt:FieldValue.serverTimestamp()
+      }, { merge:true });
+    }
+    tx.create(historyRef, {
+      submissionId, studentCode:normalizeCode(old.studentCode), assignmentId:text(old.assignmentId,120),
+      oldGrade:old.score ?? null, newGrade:score, oldStatus:text(old.status,60), newStatus:patch.status,
+      reviewerUid:staff.uid, reviewerRole:staff.role, reviewerEmail:staff.email || '', comment:patch.teacherComment,
+      createdAt:FieldValue.serverTimestamp()
+    });
+    tx.set(leaderboardStateRefLocal, { version:FieldValue.increment(1), reason:'homework-reviewed', updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    return { ...patch, reviewedAt, updatedAt:reviewedAt };
+  });
+});
+
+exports.migrateStudentCodeSafely = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds:120, memory:'512MiB' }, async request => {
+  const staff = await requireStaff(request, ['admin']);
+  const oldCode = normalizeCode(request.data?.oldCode), newCode = normalizeCode(request.data?.newCode);
+  if (!validLegacyOrStrongCode(oldCode) || !validLegacyOrStrongCode(newCode) || oldCode === newCode) {
+    throw new HttpsError('invalid-argument', 'أكواد الطالب غير صالحة.');
+  }
+  const oldId = cleanDocId(oldCode), newId = cleanDocId(newCode);
+  const oldStudentRef = db.collection('students').doc(oldId), newStudentRef = db.collection('students').doc(newId);
+  const [oldStudentSnap, newStudentSnap, newPortalSnap, newParentSnap] = await Promise.all([
+    oldStudentRef.get(), newStudentRef.get(), db.collection('student_portal').doc(newId).get(), db.collection('parent_portal').doc(newId).get()
+  ]);
+  if (!oldStudentSnap.exists) throw new HttpsError('not-found', 'الطالب القديم غير موجود.');
+  if (newStudentSnap.exists || newPortalSnap.exists || newParentSnap.exists) throw new HttpsError('already-exists', 'الكود الجديد مستخدم بالفعل.');
+  const student = oldStudentSnap.data() || {};
+  const oldParentCode = normalizeCode(student.parentCode || oldCode);
+  const directNames = ['student_portal','parent_portal','payments','student_attempts'];
+  const directSnaps = await Promise.all(directNames.map(name => db.collection(name).doc(name === 'parent_portal' ? cleanDocId(oldParentCode) : oldId).get()));
+  const queryCollections = [
+    'attendance','grades','recitations','homework_submissions','exam_attempts','payment_records',
+    'student_transfer_requests','bookings','booking_status','reports','student_push_tokens'
+  ];
+  const queried = await Promise.all(queryCollections.map(name => db.collection(name).where('studentCode','==',oldCode).get()));
+  const lockCollections = ['homework_submission_locks','exam_locks'];
+  const lockSnaps = await Promise.all(lockCollections.map(name => db.collection(name).where('studentCode','==',oldCode).get()));
+  const attemptsChildren = directSnaps[3].exists ? await directSnaps[3].ref.collection('attempts').get() : null;
+  const operationCount = 8 + queried.reduce((sum,snap)=>sum + snap.size,0) + lockSnaps.reduce((sum,snap)=>sum + snap.size * 2,0) + (attemptsChildren?.size || 0) * 2;
+  if (operationCount > 440) throw new HttpsError('resource-exhausted', 'بيانات الطالب كبيرة وتحتاج أداة ترحيل مجزأة؛ لم يتم تغيير أي بيانات.');
+  const snapshot = {
+    schemaVersion:1, oldCode, newCode, createdAt:new Date().toISOString(),
+    student:{ id:oldStudentSnap.id, data:student },
+    direct:directSnaps.filter(s=>s.exists).map(s=>({ path:s.ref.path, data:s.data() })),
+    related:queried.flatMap((snap,index)=>snap.docs.map(doc=>({ collection:queryCollections[index], id:doc.id, data:doc.data() }))),
+    locks:lockSnaps.flatMap((snap,index)=>snap.docs.map(doc=>({ collection:lockCollections[index], id:doc.id, data:doc.data() })))
+  };
+  const archiveName = `student-code-migrations/${oldId}-to-${newId}-${Date.now()}.json.gz`;
+  await admin.storage().bucket().file(archiveName).save(zlib.gzipSync(Buffer.from(JSON.stringify(snapshot),'utf8')), { resumable:false, contentType:'application/gzip' });
+  const batch = db.batch();
+  const migratedStudent = { ...student, studentCode:newCode, code:newCode, id:newCode, parentCode:newCode, updatedAt:FieldValue.serverTimestamp() };
+  batch.create(newStudentRef, migratedStudent);
+  batch.delete(oldStudentRef);
+  directSnaps.forEach((snap,index)=>{
+    if (!snap.exists) return;
+    const targetName = directNames[index];
+    const target = db.collection(targetName).doc(newId);
+    batch.set(target, { ...snap.data(), studentCode:newCode, studentId:newCode, code:newCode, parentCode:newCode, updatedAt:FieldValue.serverTimestamp() });
+    batch.delete(snap.ref);
+  });
+  queried.forEach(snap=>snap.docs.forEach(doc=>batch.update(doc.ref,{ studentCode:newCode, studentId:newCode, parentCode:newCode, updatedAt:FieldValue.serverTimestamp() })));
+  lockSnaps.forEach((snap,index)=>snap.docs.forEach(doc=>{
+    const data = doc.data() || {}, collection = lockCollections[index];
+    const targetId = cleanDocId(doc.id.replace(oldCode,newCode));
+    batch.create(db.collection(collection).doc(targetId), { ...data, studentCode:newCode, updatedAt:FieldValue.serverTimestamp() });
+    batch.delete(doc.ref);
+  }));
+  if (attemptsChildren) attemptsChildren.docs.forEach(doc=>{
+    batch.set(db.collection('student_attempts').doc(newId).collection('attempts').doc(doc.id),{ ...doc.data(), studentCode:newCode, updatedAt:FieldValue.serverTimestamp() });
+    batch.delete(doc.ref);
+  });
+  const { nameKey } = studentNameIdentity(student.studentName || student.name);
+  if (nameKey) batch.set(db.collection('_student_name_claims').doc(nameKey),{ studentCode:newCode, updatedAt:FieldValue.serverTimestamp() },{ merge:true });
+  batch.set(db.collection('activityLog').doc(),{ action:'تم تغيير كود طالب بأمان', meta:{oldCode,newCode,archiveName}, actorUid:staff.uid, actorEmail:staff.email||'', actorRole:staff.role, createdAt:FieldValue.serverTimestamp() });
+  await batch.commit();
+  await markLeaderboardDirty('student-code-migrated');
+  return { ok:true, oldCode, newCode, archiveName };
 });
 
 exports.reportClientError = onCall(CALLABLE_OPTIONS, async request => {
@@ -2633,7 +2766,7 @@ exports.scheduledPlatformBackup = onSchedule({ schedule: '30 2 * * *', timeZone:
 });
 
 exports.createBackupNow = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 540, memory: '512MiB' }, async request => {
-  const staff = await requireStaff(request, ['admin', 'teacher']);
+  const staff = await requireStaff(request, ['admin']);
   const result = await createPlatformBackup('manual', staff);
   await pruneBackups(14);
   return result;
@@ -2696,7 +2829,7 @@ async function restoreCollection(collectionName, rows) {
 }
 
 exports.restoreAutomaticBackup = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 540, memory: '1GiB' }, async request => {
-  const staff = await requireStaff(request, ['admin', 'teacher']);
+  const staff = await requireStaff(request, ['admin']);
   const name = text(request.data && request.data.name, 500);
   const confirmation = text(request.data && request.data.confirmation, 50);
   if (!name.startsWith('automatic-backups/') || !name.endsWith('.json.gz')) {
@@ -2742,7 +2875,7 @@ async function commitDeleteRefs(refs) {
 }
 
 exports.deleteStudentSafely = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 120, memory: '512MiB' }, async request => {
-  const staff = await requireStaff(request, ['admin', 'teacher']);
+  const staff = await requireStaff(request, ['admin']);
   const studentCode = normalizeCode(request.data && request.data.studentCode);
   if (!validLegacyOrStrongCode(studentCode)) throw new HttpsError('invalid-argument', 'كود الطالب غير صالح.');
   const studentRef = db.collection('students').doc(cleanDocId(studentCode));
@@ -2750,7 +2883,11 @@ exports.deleteStudentSafely = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 120,
   if (!studentSnap.exists) throw new HttpsError('not-found', 'الطالب غير موجود.');
   const student = studentSnap.data();
   const { nameKey } = studentNameIdentity(student.studentName || student.name);
-  const relatedCollections = ['attendance','grades','recitations','homework_submissions','exam_attempts','payment_records','student_transfer_requests'];
+  const relatedCollections = [
+    'attendance','grades','recitations','homework_submissions','homework_submission_locks',
+    'exam_attempts','exam_locks','exam_sessions','payment_records','student_transfer_requests',
+    'bookings','booking_status','reports','student_push_tokens'
+  ];
   const relatedEntries = {};
   const relatedDocs = [];
   for (const collection of relatedCollections) {
@@ -2760,21 +2897,30 @@ exports.deleteStudentSafely = onCall({ ...CALLABLE_OPTIONS, timeoutSeconds: 120,
   }
   const attemptsParent = db.collection('student_attempts').doc(cleanDocId(studentCode));
   const attemptsChildren = await attemptsParent.collection('attempts').get().catch(() => null);
+  const directRefs = [
+    db.collection('student_portal').doc(cleanDocId(studentCode)),
+    db.collection('payments').doc(cleanDocId(studentCode)),
+    attemptsParent
+  ];
+  if (student.parentCode) directRefs.push(db.collection('parent_portal').doc(cleanDocId(student.parentCode)));
+  const directSnaps = await Promise.all(directRefs.map(ref=>ref.get().catch(()=>null)));
   const deletionSnapshot = {
     schemaVersion: 54,
     deletedAt: new Date().toISOString(),
     deletedBy: { uid: staff.uid, email: staff.email || '', role: staff.role || '' },
     student: { id: studentSnap.id, data: student },
+    direct: directSnaps.filter(snap=>snap?.exists).map(snap=>({ path:snap.ref.path, data:snap.data() })),
     related: relatedEntries,
     studentAttempts: attemptsChildren ? attemptsChildren.docs.map(doc => ({ id: doc.id, data: doc.data() })) : []
   };
   const archiveName = `deleted-students/${cleanDocId(studentCode)}/${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`;
   await admin.storage().bucket().file(archiveName).save(zlib.gzipSync(Buffer.from(JSON.stringify(deletionSnapshot), 'utf8')), { resumable: false, contentType: 'application/gzip' });
-  const refs = [studentRef, db.collection('student_portal').doc(cleanDocId(studentCode)), db.collection('payments').doc(cleanDocId(studentCode)), attemptsParent, ...relatedDocs];
-  if (student.parentCode) refs.push(db.collection('parent_portal').doc(cleanDocId(student.parentCode)));
+  const refs = [studentRef, ...directRefs, ...relatedDocs];
   if (nameKey) refs.push(db.collection('_student_name_claims').doc(nameKey));
   if (attemptsChildren) refs.push(...attemptsChildren.docs.map(doc => doc.ref));
   await commitDeleteRefs(refs);
+  const homeworkPaths = [...new Set((relatedEntries.homework_submissions || []).map(item=>text(item.data?.filePath || item.data?.path,500)).filter(path=>path.startsWith(`homework/${cleanDocId(studentCode)}/`)))];
+  await Promise.allSettled(homeworkPaths.map(path=>admin.storage().bucket().file(path).delete()));
   await db.collection('activityLog').add({ action: 'تم حذف طالب مع نسخة استرجاع', meta: { studentCode, archiveName }, actorUid: staff.uid, actorEmail: staff.email || '', actorRole: staff.role || '', createdAt: FieldValue.serverTimestamp() });
   await markLeaderboardDirty('student-deleted');
   return { ok: true, archiveName };
