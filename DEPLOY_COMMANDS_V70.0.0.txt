@@ -1,0 +1,17 @@
+# PowerShell — من داخل مجلد المشروع
+npm ci
+npm test
+npm run build
+npm --prefix functions ci --omit=dev
+
+$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"
+npx firebase-tools use saad-ewida-science-platform
+npx firebase-tools deploy --project saad-ewida-science-platform --only "firestore:rules,firestore:indexes,storage"
+
+# عند سؤال حذف فهارس موجودة وغير مذكورة في الملف اختر N للحفاظ عليها.
+# ينشر السكربت Functions على مجموعات آمنة، ثم يدفع Git إذا كان المجلد متصلًا بالمستودع.
+powershell -ExecutionPolicy Bypass -File .\deploy-production.ps1
+
+# بعد نجاح Firebase وVercel شغّل الفحص العام، ثم افتح «صحة المنصة» من حساب المدرس.
+npm run verify:production
+git status

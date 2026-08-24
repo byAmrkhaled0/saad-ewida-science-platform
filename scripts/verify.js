@@ -12,7 +12,7 @@ const requiredFiles = [
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/icon-maskable-512.png',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
   'firestore.rules', 'storage.rules', 'firestore.indexes.json', 'firebase.json',
-  'functions/index.js', 'functions/lib/academic-targeting.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/content-visibility.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
+  'functions/index.js', 'functions/lib/academic-targeting.js', 'functions/lib/assignment-schedule.js', 'functions/lib/assessment-reliability.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/assessment-reliability-v700.test.js', 'scripts/content-visibility.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'functions/package.json', 'service-worker.js', 'site.webmanifest', 'teacher.webmanifest', 'offline.html'
 ];
 
 const failures = [];
@@ -29,7 +29,7 @@ const jsFiles = [
   'assets/app.js', 'assets/admin.js', 'assets/exam-editor.js', 'assets/v53-upgrades.js', 'assets/v56-fixes.js',
   'assets/firebase-sync.js', 'assets/firebase-config.js', 'assets/online.js', 'assets/v61-ui.js',
   'assets/vendor/firebase-messaging-worker-10.12.5.min.js',
-  'functions/index.js', 'functions/lib/academic-targeting.js', 'functions/lib/assignment-schedule.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/content-visibility.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
+  'functions/index.js', 'functions/lib/academic-targeting.js', 'functions/lib/assignment-schedule.js', 'functions/lib/assessment-reliability.js', 'functions/lib/monthly-incentive.js', 'functions/lib/student-name.js', 'scripts/admin-academic-linking.test.js', 'scripts/admin-record-pagination.test.js', 'scripts/assignment-schedule.test.js', 'scripts/assessment-reliability-v700.test.js', 'scripts/content-visibility.test.js', 'scripts/exam-editor.test.js', 'scripts/student-name.test.js', 'local-server.js', 'scripts/build.js',
   'service-worker.js', 'firebase-messaging-sw.js'
 ];
 for (const relative of jsFiles) {
@@ -350,8 +350,8 @@ if (/24\/7/.test(read('index.html')) || /24\/7/.test(read('assets/app.js'))) fai
 if (!read('assets/app.js').includes('leaderboard-name-line') || !read('assets/v56.css').includes('.leaderboard-avatar')) fail('Improved mobile leaderboard identity layout is missing');
 if (!functionsSource.includes('leaderboardStateRef') || !functionsSource.includes('stateVersion') || !functionsSource.includes('getMonthlyLeaderboardRows') || !functionsSource.includes('loadMonthlyCollection')) fail('Immediate monthly leaderboard cache invalidation is missing');
 if (!functionsSource.includes("rateLimit('public-leaderboard-ip', requestIp(request)") || functionsSource.includes("rateLimitPublic('public-leaderboard', 'all'")) fail('Public leaderboard still has a shared global rate limit');
-const attendanceRecitationHomeworkOnlyScore = Math.round(100 * .30 + 0 * .40 + 100 * .15 + 100 * .15);
-if (attendanceRecitationHomeworkOnlyScore !== 60 || !functionsSource.includes('.filter(row => row.name && row.activity > 0)')) fail('Active student without an exam grade would not enter the monthly leaderboard');
+const attendanceRecitationHomeworkOnlyScore = Math.round(100 * .25 + 0 * .30 + 100 * .15 + 100 * .15 + 100 * .15);
+if (attendanceRecitationHomeworkOnlyScore !== 70 || !functionsSource.includes('.filter(row => row.name && row.activity > 0)')) fail('Active student without an exam grade would not enter the monthly leaderboard');
 if (!read('assets/firebase-sync.js').includes("markLeaderboardDirty('attendance')") || !read('assets/firebase-sync.js').includes('FieldValue.increment(1)')) fail('Staff activity does not invalidate the public leaderboard');
 if (!functionsSource.includes("source: 'secure_exam'") || !read('assets/firebase-sync.js').includes("source:'manual_exam_correction'") || !functionsSource.includes("reason:'homework-reviewed'")) fail('Exam and reviewed-homework activity is not connected to the monthly leaderboard');
 if (!read('assets/app.js').includes('monthly-incentive-card') || !read('assets/v61.css').includes('.monthly-incentive-card')) fail('Monthly incentive is not visible in the student portal');
@@ -392,7 +392,9 @@ if (!adminSource.includes('اشتراكات السنتر') || adminSource.includ
 if (!failures.some(x => x.includes('Admin v54 feature') || x.includes('subscription wording'))) ok('Academic-year, export, error-monitoring, and center-subscription checks passed');
 
 const packageInfo = JSON.parse(read('package.json'));
-if (packageInfo.version !== '69.4.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '69.4.0'") || !read('service-worker.js').includes('mf-science-v6940-attendance-fast') || [...functionsSource.matchAll(/'platform-release': '69-4-0'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '69.4.0'")) fail('V69.4.0 frontend/backend release identifiers are invalid');
+if (packageInfo.version !== '70.0.0' || !read('assets/app.js').includes("MF_ASSET_VERSION = '70.0.0'") || !read('service-worker.js').includes('mf-science-v7000-resilient-assessments') || [...functionsSource.matchAll(/'platform-release': '70-0-0'/g)].length !== 2 || !functionsSource.includes("BACKEND_RELEASE = '70.0.0'")) fail('V70.0.0 frontend/backend release identifiers are invalid');
+if (!functionsSource.includes('exports.saveExamProgress') || !read('assets/firebase-sync.js').includes('saveSecureExamProgress') || !read('assets/app.js').includes("HOMEWORK_DRAFT_DB='mf-homework-drafts-v1'")) fail('V70 assessment and homework recovery wiring is incomplete');
+if (read('service-worker.js').match(/self\.addEventListener\("install"[\s\S]*?\n\}\);/)?.[0].includes('skipWaiting') || !read('assets/app.js').includes('protectedStudentWorkflowActive')) fail('V70 service-worker activation can interrupt student work');
 if (!read('assets/v56-fixes.js').includes('saadExamFilterV6921') || !read('assets/v56-fixes.js').includes('saadExamGroupV6921') || !read('assets/v56-fixes.js').includes("_attendance:'missing'")) fail('V69.2.1 exam attendance filters are incomplete');
 if (!adminSourceCode.includes('adminRecordSections') || !adminSourceCode.includes('ensureAdminRecords') || !adminSourceCode.includes('loadNextAdminRecordType') || !firebaseSyncSource.includes('loadStaffRecordPage') || !read('scripts/build.js').includes('const adminCssParts = cssParts')) fail('V69.2.6 paginated admin records or complete admin stylesheet is incomplete');
 if (!functionsSource.includes("require('./lib/academic-targeting')") || !functionsSource.includes('canonicalStudentByCode') || !functionsSource.includes('learningResources:learningContent.learningResources') || !appSourceCode.includes('data-student-tab="resources"')) fail('V69.2.7 targeted learning-content delivery is incomplete');

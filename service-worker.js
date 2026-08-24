@@ -1,4 +1,4 @@
-const CACHE_NAME = "mf-science-v6940-attendance-fast";
+const CACHE_NAME = "mf-science-v7000-resilient-assessments";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
@@ -42,7 +42,6 @@ self.addEventListener("install", event => {
   event.waitUntil((async()=>{
     const cache=await caches.open(CACHE_NAME);
     await Promise.allSettled(APP_SHELL.map(url=>cache.add(new Request(url,{cache:"reload"}))));
-    await self.skipWaiting();
   })());
 });
 
@@ -68,8 +67,10 @@ self.addEventListener("fetch", event => {
   if(request.mode==="navigate"){
     event.respondWith((async()=>{
       try{
-        const response=await fetch(request);
-        if(response.ok){const cache=await caches.open(CACHE_NAME);cache.put(request,response.clone());}
+        const response=await fetch(request,{cache:"no-store"});
+        // Cache only the canonical page path. Student/parent access codes and
+        // assessment query parameters must never become cache keys.
+        if(response.ok){const cache=await caches.open(CACHE_NAME);cache.put(new Request(url.pathname),response.clone());}
         return response;
       }catch(_){
         // Query strings such as ?code=12345678 must fall back to the cached

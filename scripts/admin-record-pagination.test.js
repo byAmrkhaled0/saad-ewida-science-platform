@@ -52,7 +52,7 @@ test('later pages merge without duplicates and preserve chronological student hi
 });
 
 test('each heavy admin section requests only the records it uses',()=>{
-  assert.match(adminSource,/attendance:\['attendance','recitations','homeworks'\]/);
+  assert.match(adminSource,/attendance:\['attendance','recitations','practicals','homeworks'\]/);
   assert.match(adminSource,/payments:\['paymentRecords'\]/);
   assert.match(adminSource,/exams:\['attempts'\]/);
   assert.match(adminSource,/assignments:\['homeworks'\]/);
@@ -66,6 +66,7 @@ test('Firestore composite indexes cover ordered student history queries',()=>{
     'attendance:studentCode:ASCENDING|date:DESCENDING',
     'grades:studentCode:ASCENDING|date:DESCENDING',
     'recitations:studentCode:ASCENDING|date:DESCENDING',
+    'practical_records:studentCode:ASCENDING|date:DESCENDING',
     'homework_submissions:studentCode:ASCENDING|submittedAt:DESCENDING',
     'exam_attempts:studentCode:ASCENDING|submittedAt:DESCENDING',
     'payment_records:studentCode:ASCENDING|monthKey:DESCENDING'

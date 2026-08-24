@@ -35,7 +35,8 @@ $FunctionGroups = @(
   "functions:platformApi,functions:getPortalStudent,functions:createBooking,functions:approveBooking,functions:rejectBooking,functions:getBookingStatus,functions:getPublicLeaderboard,functions:getPublicResources,functions:getOnlineContentForStudent,functions:createStudentAccess",
   "functions:createStudentTransferRequest,functions:reviewStudentTransferRequest,functions:saveGroupSchedule,functions:deleteGroupSchedule",
   "functions:createReview,functions:registerTeacherPushToken,functions:registerStudentPushToken,functions:createAttendanceSession,functions:claimAttendanceSession,functions:recordLectureProgress,functions:recordClassProgress,functions:getExamDashboard,functions:startExam",
-  "functions:syncExamSession,functions:submitExam,functions:prepareHomeworkUpload,functions:registerHomeworkSubmission,functions:reviewHomeworkSubmission,functions:migrateStudentCodeSafely,functions:reportClientError,functions:getPlatformHealth,functions:listExamVersions,functions:restoreExamVersion",
+  "functions:syncExamSession,functions:saveExamProgress,functions:submitExam,functions:prepareHomeworkUpload,functions:registerHomeworkSubmission,functions:reviewHomeworkSubmission,functions:reopenHomeworkSubmission,functions:reportClientError",
+  "functions:migrateStudentCodeSafely,functions:getPlatformHealth,functions:listExamVersions,functions:restoreExamVersion",
   "functions:createBackupNow,functions:listAutomaticBackups,functions:getBackupDownloadUrl,functions:restoreAutomaticBackup,functions:deleteStudentSafely,functions:scheduledPlatformBackup",
   "functions:notifyStaffOnBookingCreated,functions:notifyStudentsOnExamUpdated,functions:notifyStudentsOnAssignmentUpdated,functions:notifyStudentsOnLectureUpdated,functions:notifyStudentsOnQuestionUpdated,functions:archiveExamVersion",
   "functions:listStaffAccounts,functions:upsertStaffAccount,functions:setStaffAccountState,functions:uploadBookingReceipt,functions:reviewBookingReceipt"
@@ -61,7 +62,7 @@ Write-Host "8/8 Pushing production source to GitHub..." -ForegroundColor Cyan
 Invoke-Checked -Label "git add" -Action { git add -A }
 $changes = git status --porcelain
 if ($changes) {
-  Invoke-Checked -Label "git commit" -Action { git commit -m "Monthly attendance and session reliability V69.4.0" }
+  Invoke-Checked -Label "git commit" -Action { git commit -m "Student assessment reliability and reports V70.0.0" }
   Invoke-Checked -Label "git push" -Action { git push origin main }
 } else {
   Write-Host "No Git changes to push." -ForegroundColor Yellow

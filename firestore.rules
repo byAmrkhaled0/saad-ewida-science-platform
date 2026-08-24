@@ -126,9 +126,16 @@ service cloud.firestore {
     }
     match /homework_submission_locks/{id} { allow read, write: if false; }
     match /homework_review_history/{id} { allow read: if isTeacher() || assistantCan('assignments'); allow write: if false; }
+    match /homework_submission_history/{id} { allow read: if isTeacher() || assistantCan('assignments'); allow write: if false; }
 
     match /attendance/{id} { allow read: if isStaff(); allow create, update: if isTeacher() || assistantCan('attendance'); allow delete: if isTeacher(); }
     match /recitations/{id} {
+      allow read: if isStaff();
+      allow create, update: if isTeacher() || assistantCan('attendance');
+      allow delete: if isTeacher()
+        || (isAssistant() && resource.data.method == 'teacher_class_check');
+    }
+    match /practical_records/{id} {
       allow read: if isStaff();
       allow create, update: if isTeacher() || assistantCan('attendance');
       allow delete: if isTeacher()

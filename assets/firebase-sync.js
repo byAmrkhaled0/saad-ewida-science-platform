@@ -108,12 +108,14 @@
       getExamDashboard:callable('getExamDashboard'),
       startExam:callable('startExam'),
       syncExamSession:callable('syncExamSession'),
+      saveExamProgress:callable('saveExamProgress'),
       submitExam:callable('submitExam'),
       reportClientError:callable('reportClientError'),
       createStudentAccess:callable('createStudentAccess'),
       prepareHomeworkUpload:callable('prepareHomeworkUpload'),
       registerHomeworkSubmission:callable('registerHomeworkSubmission'),
       reviewHomeworkSubmission:callable('reviewHomeworkSubmission'),
+      reopenHomeworkSubmission:callable('reopenHomeworkSubmission'),
       migrateStudentCodeSafely:callable('migrateStudentCodeSafely'),
       createBackupNow:callable('createBackupNow'),
       listAutomaticBackups:callable('listAutomaticBackups'),
@@ -159,7 +161,7 @@
         studentPhone:digits(s.studentPhone),parentPhone:digits(s.parentPhone),grade:s.grade||'',month:s.month||'',group:s.group||'',
         academicYear:s.academicYear||'',term:s.term||'',deliveryMode:s.deliveryMode==='online'?'online':'center',paid:s.paid===true,paymentDate:s.paymentDate||'',notes:s.notes||'',active:s.active!==false,
         attendance:Array.isArray(s.attendance)?s.attendance:[],grades:Array.isArray(s.grades)?s.grades:[],
-        homeworks:Array.isArray(s.homeworks)?s.homeworks:[],recitations:Array.isArray(s.recitations)?s.recitations:[]
+        homeworks:Array.isArray(s.homeworks)?s.homeworks:[],recitations:Array.isArray(s.recitations)?s.recitations:[],practicals:Array.isArray(s.practicals)?s.practicals:[]
       };
     }
 
@@ -194,12 +196,17 @@
       };
     }
 
-    async function upload(file,folder,fixedName='',skipDownloadUrl=false){
+    async function upload(file,folder,fixedName='',skipDownloadUrl=false,onProgress=null){
       if(!file)throw new Error('No file selected');
       const safeName=String(fixedName||`${Date.now()}-${file.name}`).replace(/[\\/#?\[\]]/g,'-');
       const path=`${folder||'public/uploads'}/${safeName}`;
       const ref=storage.ref(path);
-      await ref.put(file,{contentType:file.type||'application/octet-stream'});
+      const task=ref.put(file,{contentType:file.type||'application/octet-stream'});
+      if(typeof onProgress==='function')await new Promise((resolve,reject)=>task.on('state_changed',snapshot=>{
+        const total=Number(snapshot.totalBytes)||Number(file.size)||1;
+        onProgress(Math.max(0,Math.min(100,Math.round(Number(snapshot.bytesTransferred||0)*100/total))));
+      },reject,resolve));
+      else await task;
       return {url:skipDownloadUrl?'':await ref.getDownloadURL(),path,fileName:file.name,size:file.size,contentType:file.type};
     }
 
@@ -313,9 +320,22 @@
       grades:{collection:'grades',orderBy:'date'},
       attendance:{collection:'attendance',orderBy:'date'},
       recitations:{collection:'recitations',orderBy:'date'},
+      practicals:{collection:'practical_records',orderBy:'date'},
       homeworks:{collection:'homework_submissions',orderBy:'submittedAt'},
       paymentRecords:{collection:'payment_records',orderBy:'monthKey'}
     });
+    let staffStudentCursor=null,staffStudentsHaveMore=true;
+    async function loadStaffStudentPage(options={}){
+      const pageSize=Math.max(50,Math.min(300,Number(options.pageSize)||250));
+      if(options.reset===true){staffStudentCursor=null;staffStudentsHaveMore=true;}
+      if(!staffStudentsHaveMore)return {rows:[],hasMore:false};
+      let ref=db.collection('students').orderBy(firebase.firestore.FieldPath.documentId()).limit(pageSize);
+      if(staffStudentCursor)ref=ref.startAfter(staffStudentCursor);
+      const snap=await ref.get(),rows=snap.docs.map(doc=>normalizedStudent({id:doc.id,...doc.data()}));
+      staffStudentCursor=snap.docs[snap.docs.length-1]||staffStudentCursor;
+      staffStudentsHaveMore=snap.size===pageSize;
+      return {rows,hasMore:staffStudentsHaveMore};
+    }
     async function loadStaffRecordPage(type,options={}){
       const source=staffRecordSources[type];
       if(!source)throw new Error('Unknown staff record type');
@@ -361,12 +381,12 @@
     }
 
     async function loadStaffCoreCollections(){
-      const [students,bookings,materials,questions,exams,reviews,groups,assignments,payments,studentTransferRequests,settings]=await Promise.all([
-        getDocs('students').catch(()=>[]),getDocs('bookings',500,{orderBy:'createdAt',direction:'desc'}).catch(()=>[]),getDocs('materials').catch(()=>[]),getDocs('questions').catch(()=>[]),
+      const [studentPage,bookings,materials,questions,exams,reviews,groups,assignments,payments,studentTransferRequests,settings]=await Promise.all([
+        loadStaffStudentPage({reset:true}).catch(()=>({rows:[],hasMore:false})),getDocs('bookings',500,{orderBy:'createdAt',direction:'desc'}).catch(()=>[]),getDocs('materials').catch(()=>[]),getDocs('questions').catch(()=>[]),
         getDocs('exams').catch(()=>[]),getDocs('reviews').catch(()=>[]),getDocs('groups').catch(()=>[]),getDocs('assignments').catch(()=>[]),
         getDocs('payments',3000).catch(()=>[]),getDocs('student_transfer_requests',500,{orderBy:'createdAt',direction:'desc'}).catch(()=>[]),getSettings().catch(()=>({}))
       ]);
-      const normalized=students.map(normalizedStudent);const map=new Map(normalized.map(st=>[st.studentCode,st]));
+      const normalized=studentPage.rows.map(normalizedStudent);const map=new Map(normalized.map(st=>[st.studentCode,st]));
       payments.forEach(row=>{const st=map.get(normalizeCode(row.studentCode||row.studentId||''));if(st){st.paid=row.paid===true;st.paymentDate=row.paymentDate||st.paymentDate;}});
       normalized.forEach(st=>{
         const id=cleanDocId(st.studentCode);seedFingerprint('students',id,studentProfile(st));seedFingerprint('student_portal',id,studentProfile(st));
@@ -376,18 +396,19 @@
       payments.forEach(item=>seedFingerprint('payments',cleanDocId(item.studentCode||item.studentId||item.id),item));
       [['materials',materials],['questions',questions],['exams',exams],['reviews',reviews],['groups',groups],['assignments',assignments]].forEach(([collection,rows])=>rows.forEach(item=>seedFingerprint(collection,cleanDocId(item.id),item)));
       seedFingerprint('settings','platform',settings);
-      return {students:normalized,bookings,materials,questions,exams,reviews,groups,assignments,paymentRecords:[],studentTransferRequests,examAttempts:[],grades:[],settings};
+      return {students:normalized,studentDirectoryHasMore:studentPage.hasMore,bookings,materials,questions,exams,reviews,groups,assignments,paymentRecords:[],studentTransferRequests,examAttempts:[],grades:[],settings};
     }
 
     async function loadStaffRecordCollections(){
-      const [attempts,grades,attendance,recitations,homeworks]=await Promise.all([
+      const [attempts,grades,attendance,recitations,practicals,homeworks]=await Promise.all([
         db.collection('exam_attempts').orderBy('submittedAt','desc').limit(1000).get().then(snap=>snap.docs.map(doc=>({id:doc.id,...doc.data()}))).catch(()=>getDocs('exam_attempts',1000).catch(()=>[])),getDocs('grades',5000).catch(()=>[]),getDocs('attendance',5000,{orderBy:'date',direction:'desc'}).catch(()=>[]),
-        getDocs('recitations',3000).catch(()=>[]),getDocs('homework_submissions',3000).catch(()=>[])
+        getDocs('recitations',3000).catch(()=>[]),getDocs('practical_records',3000).catch(()=>[]),getDocs('homework_submissions',3000).catch(()=>[])
       ]);
       attendance.forEach(item=>seedFingerprint('attendance',cleanDocId(item.id),item));
       grades.forEach(item=>seedFingerprint('grades',cleanDocId(item.id),item));
       recitations.forEach(item=>seedFingerprint('recitations',cleanDocId(item.id),item));
-      return {attempts,grades,attendance,recitations,homeworks};
+      practicals.forEach(item=>seedFingerprint('practical_records',cleanDocId(item.id),item));
+      return {attempts,grades,attendance,recitations,practicals,homeworks};
     }
 
     async function loadPortalStudentDirectForStaff(code){
@@ -404,15 +425,15 @@
           return snap.docs.map(doc=>({id:doc.id,...doc.data()}));
         }
       };
-      const [attendance,grades,homeworks,recitations,attempts,payment,paymentRecords,assignments]=await Promise.all([
-        rows('attendance','date').catch(()=>[]),rows('grades','date').catch(()=>[]),rows('homework_submissions','submittedAt').catch(()=>[]),rows('recitations','date').catch(()=>[]),rows('exam_attempts','submittedAt').catch(()=>[]),
+      const [attendance,grades,homeworks,recitations,practicals,attempts,payment,paymentRecords,assignments]=await Promise.all([
+        rows('attendance','date').catch(()=>[]),rows('grades','date').catch(()=>[]),rows('homework_submissions','submittedAt').catch(()=>[]),rows('recitations','date').catch(()=>[]),rows('practical_records','date').catch(()=>[]),rows('exam_attempts','submittedAt').catch(()=>[]),
         db.collection('payments').doc(id).get().catch(()=>null),rows('payment_records','monthKey').catch(()=>[]),getDocs('assignments',300).catch(()=>[])
       ]);
       const student=normalizedStudent({id,...studentSnap.data(),studentCode,code:studentCode});
       if(payment?.exists){student.paid=payment.data().paid===true;student.paymentDate=payment.data().paymentDate||student.paymentDate;}
       student.paymentHistory=paymentRecords.sort((a,b)=>String(b.monthKey||'').localeCompare(String(a.monthKey||'')));
       const mergedGrades=new Map();attempts.filter(row=>row.score!==null&&row.score!==undefined&&row.score!=='').forEach(row=>mergedGrades.set(String(row.attemptId||row.id),{...row,exam:row.exam||row.examTitle||'امتحان',date:row.date||String(row.submittedAt||'').slice(0,10)}));grades.forEach(row=>mergedGrades.set(String(row.attemptId||row.id),row));
-      student.attendance=attendance;student.grades=[...mergedGrades.values()];student.homeworks=homeworks;student.recitations=recitations;student.examAttempts=attempts;
+      student.attendance=attendance;student.grades=[...mergedGrades.values()];student.homeworks=homeworks;student.recitations=recitations;student.practicals=practicals;student.examAttempts=attempts;
       const targetsStudent=item=>typeof window.learningTargetMatchesStudentClient==='function'
         ? window.learningTargetMatchesStudentClient(item,student)
         : (!item.grade||item.grade==='كل الصفوف'||item.grade===student.grade)
@@ -532,7 +553,7 @@
     async function recordClassProgressDirect(record){
       const profile=await getCurrentStaffProfile();
       if(!profile?.allowed)throw new Error('Not authorized');
-      const type=record?.type==='recitation'?'recitation':(record?.type==='homework'?'homework':'');
+      const type=record?.type==='recitation'?'recitation':record?.type==='homework'?'homework':record?.type==='practical'?'practical':'';
       const studentCode=normalizeCode(record?.studentCode||'');
       const date=String(record?.date||'').trim();
       if(!type||!/^[A-Z0-9_-]{6,40}$/.test(studentCode)||!/^\d{4}-\d{2}-\d{2}$/.test(date))throw new Error('بيانات متابعة الحصة غير مكتملة');
@@ -540,7 +561,7 @@
       if(!studentSnap.exists||studentSnap.data()?.active===false)throw new Error('الطالب غير موجود أو غير نشط');
       const student=studentSnap.data()||{};
       const id=cleanDocId(`${studentCode}_${date}_class`);
-      const ref=db.collection(type==='recitation'?'recitations':'homework_submissions').doc(id);
+      const ref=db.collection(type==='recitation'?'recitations':type==='practical'?'practical_records':'homework_submissions').doc(id);
       if(record?.completed===false){
         await ref.delete();
         await markLeaderboardDirty(`${type}-removed`);
@@ -555,8 +576,8 @@
         term:String(student.term||record?.term||'').slice(0,40),
         date,time:String(record?.time||'').slice(0,30),
         monthKey:date.slice(0,7),
-        title:type==='recitation'?'تسميع الحصة':'واجب الحصة',
-        status:type==='recitation'?'تم التسميع':'تم عمل الواجب',
+        title:type==='recitation'?'تسميع الحصة':type==='practical'?'عملي العلوم':'واجب الحصة',
+        status:type==='recitation'?'تم التسميع':type==='practical'?'تم العملي':'تم عمل الواجب',
         completed:true,approved:true,method:'teacher_class_check',
         checkedBy:profile.email||profile.uid,updatedAt:serverTime()
       };
@@ -580,7 +601,7 @@
       const studentRef=db.collection('students').doc(cleanDocId(studentCode));
       const studentSnap=await studentRef.get();
       const student=studentSnap.exists?studentSnap.data():normalizedStudent({...studentInput,studentCode});
-      const relatedCollections=['attendance','grades','recitations','homework_submissions','exam_attempts','payment_records','student_transfer_requests'];
+      const relatedCollections=['attendance','grades','recitations','practical_records','homework_submissions','exam_attempts','payment_records','student_transfer_requests'];
       const relatedSnaps=await Promise.all(relatedCollections.map(collection=>db.collection(collection).where('studentCode','==',studentCode).get()));
       const attemptsParent=db.collection('student_attempts').doc(cleanDocId(studentCode));
       const [attemptsSummary,attemptsChildren]=await Promise.all([attemptsParent.get(),attemptsParent.collection('attempts').get()]);
@@ -642,6 +663,7 @@
       },
       loadStaffRecords:async()=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordCollections();},
       loadStaffRecordPage:async(type,options={})=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffRecordPage(type,options);},
+      loadNextStudentPage:async()=>{const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');return loadStaffStudentPage({pageSize:250});},
       saveSiteData:async(payload,options={})=>syncPayloadToCollections(payload,options),
       saveLearningItem:async(collection,item)=>{
         const allowed=new Set(['materials','questions','assignments']);
@@ -686,6 +708,10 @@
       reviewHomeworkSubmission:async(id,review)=>{
         if(!calls.reviewHomeworkSubmission)throw new Error('Secure homework review service is unavailable');
         return calls.reviewHomeworkSubmission({id:cleanDocId(id),...review});
+      },
+      reopenHomeworkSubmission:async(id,options={})=>{
+        if(!calls.reopenHomeworkSubmission)throw new Error('Secure homework resubmission service is unavailable');
+        return calls.reopenHomeworkSubmission({id:cleanDocId(id),...options});
       },
       saveGroup:async group=>{
         if(!calls.saveGroupSchedule)throw new Error('Secure schedule service is unavailable');
@@ -763,6 +789,7 @@
       getExamDashboard:async studentCode=>{if(!calls.getExamDashboard)throw new Error('Secure exam dashboard function is unavailable');return calls.getExamDashboard({studentCode:normalizeCode(studentCode)});},
       startSecureExam:async(examId,studentCode)=>{if(!calls.startExam)throw new Error('Secure start exam function is unavailable');return calls.startExam({examId,studentCode:normalizeCode(studentCode)});},
       syncSecureExam:async(sessionId,studentCode)=>{if(!calls.syncExamSession)throw new Error('Secure exam sync function is unavailable');return calls.syncExamSession({sessionId,studentCode:normalizeCode(studentCode)});},
+      saveSecureExamProgress:async(sessionId,studentCode,answers,current,revision)=>{if(!calls.saveExamProgress)throw new Error('Secure exam progress service is unavailable');return calls.saveExamProgress({sessionId,studentCode:normalizeCode(studentCode),answers,current,revision});},
       submitSecureExam:async(sessionId,studentCode,answers)=>{if(!calls.submitExam)throw new Error('Secure submit exam function is unavailable');return calls.submitExam({sessionId,studentCode:normalizeCode(studentCode),answers});},
       listExamVersions:examId=>calls.listExamVersions({examId:cleanDocId(examId)}),
       restoreExamVersion:(examId,versionId)=>calls.restoreExamVersion({examId:cleanDocId(examId),versionId:cleanDocId(versionId)}),
@@ -792,7 +819,7 @@
         if(!calls.getPortalStudent)throw new Error('Secure parent portal function is unavailable');
         return retryTransient(()=>calls.getPortalStudent(data),1);
       },
-      uploadHomework:async(file,studentCode,assignmentId='')=>{const normalized=normalizeCode(studentCode),assignment=String(assignmentId||'').trim();if(!calls.prepareHomeworkUpload||!calls.registerHomeworkSubmission)throw new Error('Secure homework function is unavailable');const permit=await calls.prepareHomeworkUpload({studentCode:normalized,assignmentId:assignment,fileName:file.name,size:file.size,contentType:file.type});const uploaded=await upload(file,`homework/${cleanDocId(normalized)}/${permit.uploadId}`,permit.safeName,true);await calls.registerHomeworkSubmission({studentCode:normalized,assignmentId:assignment,uploadId:permit.uploadId,...uploaded,fileName:file.name});return uploaded;},
+      uploadHomework:async(file,studentCode,assignmentId='',onProgress=null)=>{const normalized=normalizeCode(studentCode),assignment=String(assignmentId||'').trim();if(!calls.prepareHomeworkUpload||!calls.registerHomeworkSubmission)throw new Error('Secure homework function is unavailable');const permit=await calls.prepareHomeworkUpload({studentCode:normalized,assignmentId:assignment,fileName:file.name,size:file.size,contentType:file.type});const uploaded=await upload(file,`homework/${cleanDocId(normalized)}/${permit.uploadId}`,permit.safeName,true,onProgress);await calls.registerHomeworkSubmission({studentCode:normalized,assignmentId:assignment,uploadId:permit.uploadId,...uploaded,fileName:file.name});return uploaded;},
       // Keep every staff attachment inside the single path allowed by Storage
       // rules.  The logical folder is preserved as a filename prefix so that
       // question-bank, exam and assignment uploads work without widening the
