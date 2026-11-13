@@ -3,6 +3,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { examSessionDeadline } = require('../functions/lib/exam-schedule');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+test('the exam card crosses its time window even when the last server snapshot is unchanged', () => {
+  const source=fs.readFileSync(require.resolve('../assets/v56-fixes.js'),'utf8');
+  const start=source.indexOf('  function examTime(');
+  const end=source.indexOf('  function attemptPct(',start);
+  const available=vm.runInNewContext(source.slice(start,end)+'\navailability');
+  const openAt='2026-11-13T10:00:00Z',closeAt='2026-11-13T11:00:00Z';
+  const exam={openAt,closeAt,scheduleState:'upcoming'};
+  assert.equal(available(exam,Date.parse(openAt)-1),'upcoming');
+  assert.equal(available(exam,Date.parse(openAt)),'open');
+  assert.equal(available({...exam,scheduleState:'open'},Date.parse(closeAt)),'closed');
+  assert.equal(available({...exam,scheduleState:'closed'},Date.parse(openAt)),'closed');
+});
 
 const minute = 60 * 1000;
 const startedAt = Date.parse('2026-08-02T12:00:00.000Z');

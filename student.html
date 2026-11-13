@@ -20,8 +20,9 @@
 <title>بوابة الطالب | المستر سعد عويضة</title>
 <meta content="بوابة الطالب الخاصة بالمستر سعد عويضة لعرض الملف الدراسي والمحاضرات والنتائج بكود الطالب." name="description"/>
 <link href="assets/v64-mobile.css?v=69.2.0" rel="stylesheet"/>
+<link rel="stylesheet" href="assets/science-experience.css?v=9">
 </head>
-<body id="top">
+<body id="top" class="science-student science-platform">
 <header class="site-header">
 <div class="container navbar">
 <a aria-label="المستر سعد عويضة" class="logo" href="index.html"><img class="site-brand-logo" src="assets/icon-192.png" width="52" height="52" alt="لوجو منصة المستر سعد عويضة"><span>المستر سعد عويضة <small>أحياء • علوم • علوم متكاملة</small></span></a>
@@ -39,31 +40,36 @@
 </div>
 </header>
 <main class="student-page-v32 parent-page-v29">
+<details class="science-student-access" open>
+<summary class="container">تغيير كود الطالب</summary>
 <section class="parent-hero-v29 student-hero-v32">
-<div class="container parent-hero-grid-v29">
-<div>
-<span class="kicker"><span data-icon="user-check"></span> بوابة الطالب</span>
-<h1>ملف الطالب الدراسي</h1>
-<p>اكتب كود الطالب أو امسح QR لعرض بياناتك بشكل منظم: الحضور، التسميع، الدرجات، الواجبات، حالة الدفع، وجدول المجموعة.</p>
+<div class="container parent-hero-grid-v29 science-student-entry">
+<div class="science-entry-brand"><img src="assets/icon-192.png" width="48" height="48" alt=""><span>المستر سعد عويضة<small>أحياء وعلوم وعلوم متكاملة</small></span></div>
+<div class="science-entry-intro">
+<h1>بوابة الطالب</h1>
+<p>محاضراتك وواجباتك ودرجاتك في مكان واحد. ادخل بكودك أو امسح QR للمتابعة.</p>
 </div>
+<img class="science-entry-photo" src="assets/science-student-lab.webp" width="700" height="840" alt="" decoding="async">
 <form class="card parent-search-v29 student-search-v32" id="studentSearchForm">
 <div class="field portal-code-field"><label for="studentQuery">كود الطالب</label><div class="code-input-wrap"><span data-icon="user"></span><input id="studentQuery" name="query" placeholder="اكتب كود الطالب المكوّن من 8 أرقام" inputmode="numeric" pattern="[0-9٠-٩۰-۹]{8}" maxlength="8" autocomplete="off" spellcheck="false" enterkeyhint="go" required=""/></div><small>يُحفظ آخر كود على هذا الجهاز فقط لتسهيل فتح البوابة وتسجيل حضور الأونلاين.</small></div>
 <div class="student-search-actions-v29">
-<button class="btn primary" type="submit"><span data-icon="search"></span> عرض الملف</button>
-<button class="btn ghost" onclick="startStudentScanner()" type="button"><span data-icon="qr"></span> ماسح QR الموحّد</button>
+<button class="btn primary" type="submit"><span data-icon="log-in" aria-hidden="true"></span> دخول الطالب</button>
+<span class="science-entry-divider">أو</span>
+<button class="btn ghost science-entry-qr" onclick="startStudentScanner()" type="button"><span data-icon="qr" aria-hidden="true"></span><span><b>مسح QR</b><small>استخدم الكاميرا لمسح كود الطالب</small></span></button>
 </div>
 <p>بياناتك تظهر بالكود فقط، والحضور والتسميع يتم تسجيلهم من المدرس.</p>
 <div class="qr-scanner-box" hidden="" id="qrScannerBox"><div id="studentQrReader"></div><video id="qrScannerVideo" playsinline="" hidden></video><p>امسح QR الطالب لفتح البوابة، أو QR حصة المدرس لتسجيل حضور الأونلاين.</p><div class="qr-source-actions"><button class="btn ghost small" onclick="document.getElementById('studentQrImageInput')?.click()" type="button"><span data-icon="image"></span> اختيار صورة QR</button><button class="btn ghost small" onclick="stopStudentScanner()" type="button">إيقاف المسح</button></div><input id="studentQrImageInput" type="file" accept="image/*" hidden onchange="scanStudentQrImage(event)"></div>
 </form>
 </div>
 </section>
+</details>
 <section class="section parent-report-section-v29 student-report-section-v32">
 <div class="container">
 <div class="card result-box parent-result-v29 student-result-v32" id="studentResult" aria-live="polite">
-<div class="empty-state compact-empty-v29">
+<div class="empty-state compact-empty-v29" data-student-initial>
 <span class="iconbox" data-icon="user"></span>
 <h3>اكتب كود الطالب لعرض الملف</h3>
-<p>سيظهر ملف الطالب هنا بنفس شكل تقرير ولي الأمر وبحجم بوكسات منظم.</p>
+<p>بعد الدخول تقدر تتابع المطلوب منك، ودرجاتك، ومراجعات صفك.</p>
 </div>
 </div>
 </div>
@@ -95,7 +101,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
 <script defer src="assets/firebase-config.js?v=69.2.0"></script>
 <script defer src="assets/firebase-sync.js?v=69.2.0"></script>
-<script defer src="assets/app.js?v=69.2.0"></script>
+<script defer src="assets/app.js?v=3"></script>
 <script defer src="assets/v53-upgrades.js?v=69.2.0"></script>
 <script defer src="assets/v56-fixes.js?v=69.2.0"></script>
 </body>

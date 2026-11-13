@@ -80,7 +80,17 @@ function isEveryGroup(value) {
   return !normalized || normalized === 'كل المجموعات' || normalized === 'جميع المجموعات';
 }
 
+function assessmentAudienceIncludes(item = {}, studentCode) {
+  const targets = item.targetStudentCodes;
+  if (item.targetingMode !== 'students' && (targets == null || Array.isArray(targets) && !targets.length)) return true;
+  const normalize = code => normalizeDigits(code).trim().toUpperCase();
+  const code = normalize(studentCode);
+  return /^[A-Z0-9_-]{6,40}$/.test(code) && Array.isArray(targets) &&
+    targets.length <= 40 && targets.some(target => normalize(target) === code);
+}
+
 function learningTargetMatchesStudent(item = {}, student = {}) {
+  if (!assessmentAudienceIncludes(item, student.studentCode || student.code || student.id)) return false;
   const targetMode = item.deliveryMode === 'online' ? 'online' : item.deliveryMode === 'center' ? 'center' : 'all';
   const studentMode = student.deliveryMode === 'online' ? 'online' : 'center';
   if (targetMode !== 'all' && targetMode !== studentMode) return false;
@@ -109,5 +119,6 @@ module.exports = {
   sameAcademicValue,
   isEveryGrade,
   isEveryGroup,
+  assessmentAudienceIncludes,
   learningTargetMatchesStudent
 };

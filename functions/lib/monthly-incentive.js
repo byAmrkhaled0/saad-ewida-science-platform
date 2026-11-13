@@ -40,7 +40,7 @@ function gradePercentage(row = {}) {
 
 function calculateMonthlyMetrics({ studentCode = '', monthKey, attendance = [], grades = [], homeworks = [], recitations = [] }) {
   const att = monthlyRows(attendance, monthKey);
-  const allGradeRows = monthlyRows(grades, monthKey).filter(row => Number.isFinite(Number(row.score)));
+  const allGradeRows = monthlyRows(grades, monthKey).filter(row => row.score != null && row.score !== '' && Number.isFinite(Number(row.score)));
   const gradeRows = allGradeRows.filter(row => !isHomeworkGrade(row));
   const homeworkRows = monthlyRows(homeworks, monthKey).filter(isComplete);
   const homeworkGradeMap = new Map();

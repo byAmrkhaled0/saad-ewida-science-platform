@@ -20,8 +20,9 @@
 <title>الامتحانات والتقييمات | المستر سعد عويضة</title>
 <meta content="امتحانات شهرية بوقت وعدّاد ودرجات تظهر للطالب بالكود." name="description"/>
 <link href="assets/v64-mobile.css?v=69.2.0" rel="stylesheet"/>
+<link rel="stylesheet" href="assets/science-experience.css?v=5">
 </head>
-<body id="top">
+<body id="top" class="science-platform science-exams">
 <header class="site-header">
 <div class="container navbar">
 <a aria-label="المستر سعد عويضة" class="logo" href="index.html"><img class="site-brand-logo" src="assets/icon-192.png" width="52" height="52" alt="لوجو منصة المستر سعد عويضة"><span>المستر سعد عويضة <small>أحياء • علوم • علوم متكاملة</small></span></a>
@@ -31,7 +32,7 @@
 <a href="online.html">الأونلاين</a>
 <a href="index.html#booking">الحجز</a>
 <a href="parent.html">ولي الأمر</a>
-<a href="student.html">بوابة الطالب</a>
+<a href="student.html?login=1">بوابة الطالب</a>
 <a href="materials.html">المراجعات والأسئلة</a>
 <a href="exams.html">الامتحانات</a>
 </nav>
@@ -40,18 +41,21 @@
 </header>
 <main>
 <section class="page-hero">
-<div class="container">
+<div class="container science-assessment-entry">
+<div>
 <span class="kicker"><span data-icon="clipboard"></span> الامتحانات الشهرية</span>
 <h1 class="hero-title">الامتحانات الشهرية والنتائج</h1>
-<p class="hero-sub">اكتب كود الطالب فقط لعرض امتحانات الصف والنتائج المسجلة.</p>
+<p class="hero-sub">اكتب كود الطالب لعرض امتحانات صفك والنتائج المسجلة.</p>
 </div>
-</section>
-<section class="section tight">
-<div class="container portal-shell">
 <form class="card" id="examCodeForm">
 <div class="field portal-code-field"><label for="examStudentCode">كود الطالب</label><div class="code-input-wrap"><span data-icon="user"></span><input id="examStudentCode" name="query" placeholder="اكتب كود الطالب المكوّن من 8 أرقام" inputmode="numeric" pattern="[0-9٠-٩۰-۹]{8}" maxlength="8" autocomplete="off" spellcheck="false" enterkeyhint="go" required=""/></div><small>اكتب كود الطالب لعرض امتحانات الصف فقط.</small></div><label class="remember-code"><input type="checkbox" name="rememberCode"/> <span>حفظ الكود على هذا الجهاز</span></label>
 <button class="btn primary portal-submit-btn" style="margin-top:14px"><span data-icon="search"></span> عرض امتحاناتي</button>
 </form>
+</div>
+</section>
+<section class="section tight">
+<div class="container portal-shell">
+
 <div class="card result-box" id="examStudentResult" aria-live="polite"><div class="portal-empty"><span class="iconbox" data-icon="clipboard"></span><h3>امتحاناتك في انتظارك</h3><p>اكتب كود الطالب بالأعلى لعرض الامتحانات المتاحة والنتائج.</p></div></div>
 </div>
 </section>
@@ -71,7 +75,7 @@
 <nav aria-label="تنقل الهاتف" class="mobile-bottom">
 <a href="index.html"><span data-icon="atom"></span><span>الرئيسية</span></a>
 <a href="index.html#booking"><span data-icon="calendar"></span><span>الحجز</span></a>
-<a href="student.html"><span data-icon="user"></span><span>الطالب</span></a>
+<a href="student.html?login=1"><span data-icon="user"></span><span>الطالب</span></a>
 <a href="parent.html"><span data-icon="users"></span><span>ولي الأمر</span></a>
 <a href="exams.html"><span data-icon="clipboard"></span><span>امتحان</span></a>
 </nav>

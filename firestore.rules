@@ -28,12 +28,21 @@ service cloud.firestore {
     match /settings/platform { allow read: if true; allow write: if isTeacher(); }
     match /settings/{docId} { allow read, write: if isTeacher(); }
 
+    function assistantPaymentSummary() {
+      return assistantCan('payments')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid','paymentDate','currentPaymentMonth','updatedAt'])
+        && request.resource.data.paid is bool
+        && request.resource.data.paymentDate is string
+        && request.resource.data.currentPaymentMonth is string
+        && request.resource.data.currentPaymentMonth.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+        && request.resource.data.updatedAt == request.time;
+    }
     match /students/{studentCode} {
       allow read: if isStaff();
       allow create: if (isTeacher() || assistantCan('students')) && validCode(studentCode)
         && request.resource.data.studentCode == studentCode
         && validCode(request.resource.data.parentCode);
-      allow update: if isTeacher() || (assistantCan('students')
+      allow update: if isTeacher() || assistantPaymentSummary() || (assistantCan('students')
         && request.resource.data.studentCode == resource.data.studentCode
         && request.resource.data.parentCode == resource.data.parentCode
         && request.resource.data.active == resource.data.active);
@@ -42,7 +51,7 @@ service cloud.firestore {
     match /student_portal/{studentCode} {
       allow read: if isStaff();
       allow create: if (isTeacher() || assistantCan('students')) && request.resource.data.studentCode == studentCode;
-      allow update: if isTeacher() || (assistantCan('students')
+      allow update: if isTeacher() || assistantPaymentSummary() || (assistantCan('students')
         && request.resource.data.studentCode == resource.data.studentCode
         && request.resource.data.parentCode == resource.data.parentCode
         && request.resource.data.active == resource.data.active);
@@ -51,7 +60,7 @@ service cloud.firestore {
     match /parent_portal/{parentCode} {
       allow read: if isStaff();
       allow create: if (isTeacher() || assistantCan('students')) && request.resource.data.parentCode == parentCode;
-      allow update: if isTeacher() || (assistantCan('students')
+      allow update: if isTeacher() || assistantPaymentSummary() || (assistantCan('students')
         && request.resource.data.studentCode == resource.data.studentCode
         && request.resource.data.parentCode == resource.data.parentCode
         && request.resource.data.active == resource.data.active);
@@ -90,8 +99,24 @@ service cloud.firestore {
       allow read: if isTeacher() || assistantCan('students') || assistantCan('schedules');
       allow write: if false;
     }
-    match /assignments/{id} { allow read: if isStaff(); allow write: if isTeacher() || assistantCan('assignments'); }
-    match /exams/{id} { allow read: if isStaff(); allow write: if isTeacher() || assistantCan('exams'); }
+    function validAssessmentAudience(data) {
+      let mode = data.get('targetingMode', 'class');
+      let codes = data.get('targetStudentCodes', []);
+      return codes is list && (
+        (mode == 'class' && codes.size() == 0) ||
+        (mode == 'students' && codes.size() > 0 && codes.size() <= 40)
+      );
+    }
+    match /assignments/{id} {
+      allow read: if isStaff();
+      allow create, update: if (isTeacher() || assistantCan('assignments')) && validAssessmentAudience(request.resource.data);
+      allow delete: if isTeacher() || assistantCan('assignments');
+    }
+    match /exams/{id} {
+      allow read: if isStaff();
+      allow create, update: if (isTeacher() || assistantCan('exams')) && validAssessmentAudience(request.resource.data);
+      allow delete: if isTeacher() || assistantCan('exams');
+    }
 
     match /exam_sessions/{id} { allow read, write: if false; }
     match /exam_locks/{id} { allow read, write: if false; }

@@ -23,8 +23,9 @@
 <link href="assets/v59.css?v=69.2.0" rel="stylesheet"/>
 <link href="assets/v60.css?v=69.2.0" rel="stylesheet"/>
 <link href="assets/v64-mobile.css?v=69.2.0" rel="stylesheet"/>
+<link rel="stylesheet" href="assets/science-experience.css?v=8">
 </head>
-<body id="top">
+<body id="top" class="science-home science-platform">
 <header class="site-header">
 <div class="container navbar">
 <a aria-label="المستر سعد عويضة" class="logo" href="#home">
@@ -37,83 +38,109 @@
 <a href="online.html">الأونلاين</a>
 <a href="index.html#booking">الحجز</a>
 <a href="parent.html">ولي الأمر</a>
-<a href="student.html">بوابة الطالب</a>
+<a href="student.html?login=1">بوابة الطالب</a>
 <a href="materials.html">المراجعات والأسئلة</a>
-<a href="exams.html">الامتحانات</a>
+<a href="exams.html">الاختبارات</a>
 </nav>
 <div class="header-actions">
 <button aria-label="تغيير الوضع" class="theme-toggle" id="themeToggle"></button>
+<a class="btn primary science-header-entry" href="student.html?login=1">دخول الطالب</a>
 
 </div>
 </div>
 </header>
 <div class="quran-opening"><span data-page-verse>وَقُلْ رَبِّ زِدْنِي عِلْمًا</span></div>
 <main id="home">
-<section class="hero">
-<div class="science-floaters" aria-hidden="true"><i data-icon="atom"></i><i data-icon="book-open"></i><i data-icon="sparkles"></i><i data-icon="clipboard"></i><i data-icon="bar-chart"></i></div>
-<div class="container hero-grid">
-<div>
-<span class="kicker"><span data-icon="sparkles"></span> نسعى للإبداع والتفوق</span>
-<h1 class="hero-title">مدرس الأحياء والعلوم في المنصورة وأونلاين <span>المستر سعد عويضة</span></h1>
-<p class="hero-sub">شرح حديث يربط المعلومة بالحياة، تدريب مستمر، ومتابعة حقيقية لطلاب العام والأزهر والتجريبي واللغات في المنصورة ومن كل مكان أونلاين.</p>
-<div class="v56-hero-promise"><span><i data-icon="user-check"></i> متابعة شخصية</span><span><i data-icon="bar-chart"></i> قياس مستمر للمستوى</span><span><i data-icon="sparkles"></i> أونلاين وتسجيلات</span></div>
+<section class="container science-hero" aria-labelledby="scienceHeroTitle">
+<div class="science-hero-grid">
+<div class="science-hero-copy">
+<span class="science-eyebrow"><span data-icon="atom" aria-hidden="true"></span> منصة المستر سعد عويضة</span>
+<h1 id="scienceHeroTitle">العلوم تبدأ <span>بسؤال.</span></h1>
+<p>شرح الأحياء والعلوم والعلوم المتكاملة مع المستر سعد عويضة، في المنصورة وأونلاين.</p>
 <div class="hero-cta">
-<a class="btn primary" href="#booking"><span data-icon="calendar"></span> احجز من الموقع</a>
-<a class="btn gold" href="online.html"><span data-icon="external-link"></span> محاضرات الأونلاين</a>
-<a class="btn ghost" href="student.html"><span data-icon="user-check"></span> دخول الطالب</a>
-<button class="btn ghost" id="installAppButton" type="button" hidden><span data-icon="external-link"></span> تثبيت المنصة</button>
+<a class="btn primary" href="student.html?login=1"><span data-icon="user-check"></span> دخول الطالب</a>
+<a class="btn gold" href="#booking"><span data-icon="calendar"></span> احجز الآن</a>
 </div>
-<div class="hero-stats" id="liveCounts"><div class="stat"><b>9</b><small>صفوف دراسية</small></div><div class="stat"><b>متاحة</b><small>بوابة الطالب</small></div><div class="stat"><b>QR</b><small>حضور وامتحانات</small></div></div>
 </div>
-<div aria-label="صورة المستر سعد عويضة" class="teacher-frame">
-<div class="teacher-photo"><picture><source media="(max-width: 900px)" srcset="assets/teacher-480.webp"><img alt="المستر سعد عويضة مدرس أحياء وعلوم في المنصورة وأونلاين" src="assets/teacher.webp" width="1000" height="991" decoding="async" fetchpriority="high"/></picture></div>
+<div class="science-hero-visual" aria-hidden="true"><img class="science-hero-art" src="assets/science-lab-hero.svg" width="640" height="400" alt="" loading="eager" decoding="async" fetchpriority="high"></div>
 </div>
-<div class="hero-social-actions"><a class="btn ghost" href="tel:01097163200"><span data-icon="phone"></span> اتصال</a><a class="btn ghost" href="https://wa.me/201097163200" target="_blank" rel="noreferrer"><span data-icon="send"></span> واتساب</a><a class="btn ghost" href="https://www.facebook.com/saad.abomoaz" target="_blank" rel="noreferrer"><span data-icon="facebook"></span> فيسبوك</a></div>
-</div>
+</section>
+<section class="section science-paths" aria-labelledby="sciencePathsTitle">
+<div class="container"><h2 id="sciencePathsTitle">اختار مرحلتك الدراسية</h2>
+<div class="science-path-grid">
+<a href="#booking"><span data-icon="atom" aria-hidden="true"></span><small>رابعة إلى سادسة ابتدائي</small><strong>علوم ابتدائي</strong><span class="science-path-action">احجز لصفك ←</span></a>
+<a href="#booking"><span data-icon="book-open" aria-hidden="true"></span><small>أولى إلى تالتة إعدادي</small><strong>علوم إعدادي</strong><span class="science-path-action">احجز لصفك ←</span></a>
+<a href="#booking"><span data-icon="sparkles" aria-hidden="true"></span><small>أولى إلى تالتة ثانوي</small><strong>أحياء وعلوم متكاملة</strong><span class="science-path-action">احجز لصفك ←</span></a>
+</div></div></section>
+<section class="container science-access" aria-labelledby="scienceAccessTitle">
+<h2 id="scienceAccessTitle">خدمات الطالب والأسرة</h2>
+<nav class="science-shortcuts" aria-label="أقسام المنصة">
+<a href="online.html"><span data-icon="book-open" aria-hidden="true"></span><span class="science-shortcut-label"><strong>المحاضرات</strong><small>الشرح والتسجيلات</small></span><span class="science-shortcut-arrow" aria-hidden="true">←</span></a>
+<a href="exams.html"><span data-icon="clipboard" aria-hidden="true"></span><span class="science-shortcut-label"><strong>الاختبارات</strong><small>اختبر فهمك</small></span><span class="science-shortcut-arrow" aria-hidden="true">←</span></a>
+<a href="materials.html"><span data-icon="file-text" aria-hidden="true"></span><span class="science-shortcut-label"><strong>المراجعات</strong><small>وبنك الأسئلة</small></span><span class="science-shortcut-arrow" aria-hidden="true">←</span></a>
+<a href="parent.html"><span data-icon="users" aria-hidden="true"></span><span class="science-shortcut-label"><strong>ولي الأمر</strong><small>متابعة الطالب</small></span><span class="science-shortcut-arrow" aria-hidden="true">←</span></a>
+<a href="#top-students"><span data-icon="star" aria-hidden="true"></span><span class="science-shortcut-label"><strong>أوائل الشهر</strong><small>لوحة التحفيز</small></span><span class="science-shortcut-arrow" aria-hidden="true">←</span></a>
+<a href="#booking"><span data-icon="calendar" aria-hidden="true"></span><span class="science-shortcut-label"><strong>الحجز</strong><small>سنتر أو أونلاين</small></span><span class="science-shortcut-arrow" aria-hidden="true">←</span></a>
+</nav>
+</section>
+<section class="container science-journey" aria-labelledby="scienceJourneyTitle">
+  <div class="science-section-heading">
+    <h2 id="scienceJourneyTitle">الفهم أولًا… والتفوق نتيجة</h2>
+    <p>من فهم الدرس لحد متابعة مستواك في الامتحان.</p>
+  </div>
+  <ol class="science-journey-steps">
+    <li><span data-icon="book-open" aria-hidden="true"></span><div><h3>نفهم الفكرة</h3><p>شرح العلوم بأمثلة وتطبيقات من الحياة.</p></div></li>
+    <li><span data-icon="clipboard" aria-hidden="true"></span><div><h3>نطبّق ونتدرّب</h3><p>واجبات وأسئلة متدرجة تثبّت الفهم.</p></div></li>
+    <li><span data-icon="bar-chart" aria-hidden="true"></span><div><h3>نقيس ونتابع</h3><p>نتائج وحضور وتقارير للطالب وولي الأمر.</p></div></li>
+  </ol>
 </section>
 <section class="section tight" id="biology-teacher-mansoura">
 <div class="container">
-<div class="card">
+<article class="card science-profile">
+<picture><source media="(max-width: 900px)" srcset="assets/teacher-480.webp"><img alt="المستر سعد عويضة" src="assets/teacher.webp" width="1000" height="991" loading="lazy" decoding="async"></picture>
+<div>
 <span class="kicker"><span data-icon="atom"></span> شرح في المنصورة وأونلاين</span>
-<h2 class="section-title">بتدور على أقوى مدرس أحياء وعلوم في المنصورة أو أونلاين؟</h2>
+<h2 class="section-title">عن المستر سعد عويضة</h2>
 <p class="section-desc">يقدم المستر سعد عويضة شرح الأحياء والعلوم والعلوم المتكاملة لجميع المراحل بأسلوب مبسط واستخدام أحدث الوسائل التعليمية، مع تدريبات وامتحانات ومتابعة منتظمة لمستوى كل طالب.</p>
 <p class="section-desc">الخدمة متاحة لطلاب التعليم العام والأزهر والتجريبي واللغات داخل المنصورة، بالإضافة إلى محاضرات وتسجيلات أونلاين للطلاب من جميع المحافظات.</p>
 <div class="hero-cta"><a class="btn primary" href="#booking"><span data-icon="calendar"></span> احجز الآن</a><a class="btn ghost" href="online.html"><span data-icon="external-link"></span> تعرف على شرح الأونلاين</a><a class="btn ghost" href="services.html"><span data-icon="book-open"></span> خدمات المستر سعد</a></div>
+<div class="hero-social-actions"><a class="btn ghost" href="tel:01097163200"><span data-icon="phone"></span> اتصال</a><a class="btn ghost" href="https://wa.me/201097163200" target="_blank" rel="noreferrer"><span data-icon="send"></span> واتساب</a><a class="btn ghost" href="https://www.facebook.com/saad.abomoaz" target="_blank" rel="noreferrer"><span data-icon="facebook"></span> فيسبوك</a><button class="btn ghost" id="installAppButton" type="button" hidden><span data-icon="external-link"></span> تثبيت المنصة</button></div>
 </div>
+</article>
+<div class="hero-stats" id="liveCounts"><div class="stat"><b>9</b><small>صفوف دراسية</small></div><div class="stat"><b>متاحة</b><small>بوابة الطالب</small></div><div class="stat"><b>QR</b><small>حضور وامتحانات</small></div></div>
 </div>
-</section>
-<section class="v56-learning-journey" aria-label="رحلة الطالب داخل المنصة">
-<div class="container"><div class="v56-journey-head"><span>منهجية تعلم متكاملة</span><h2>الفهم أولًا… والتفوق نتيجة</h2><p>رحلة منظمة تحول كل درس إلى معرفة واضحة ومهارة تقدر تستخدمها في الامتحان.</p></div><div class="v56-journey-grid"><article><b>01</b><span data-icon="book-open"></span><h3>نفهم الفكرة</h3><p>تبسيط علمي مدعوم بالأمثلة والوسائل التعليمية الحديثة.</p></article><article><b>02</b><span data-icon="clipboard"></span><h3>نطبّق ونتدرّب</h3><p>واجبات وأسئلة متدرجة تكشف نقاط القوة والاحتياج.</p></article><article><b>03</b><span data-icon="bar-chart"></span><h3>نقيس ونتابع</h3><p>نتائج وحضور وتقارير واضحة للطالب وولي الأمر.</p></article></div></div>
 </section>
 <section class="section tight premium-strip" id="premium-services">
 <div class="container">
-<div class="section-head compact-head">
+<div class="section-head science-services-heading">
 <div>
-<span class="kicker"><span data-icon="sparkles"></span> خدمات المنصة</span>
 <h2 class="section-title">كل ما يحتاجه الطالب في مكان واحد</h2>
 </div>
 <a class="btn ghost" href="services.html"><span data-icon="external-link"></span> صفحة الخدمات كاملة</a>
 </div>
-<div class="app-service-grid">
-<a class="app-service-card featured-online-card" href="online.html"><span class="iconbox" data-icon="external-link"></span><div><h3>قسم الأونلاين</h3><p>روابط البث المباشر وتسجيلات Google Drive حسب صفك.</p></div><span class="service-arrow">←</span></a>
-<a class="app-service-card" href="exams.html"><span class="iconbox" data-icon="clipboard"></span><div><h3>الامتحانات</h3><p>اختبارات إلكترونية ونتائج محفوظة.</p></div><span class="service-arrow">←</span></a>
-<a class="app-service-card" href="student.html"><span class="iconbox" data-icon="bar-chart"></span><div><h3>درجاتي</h3><p>اعرف نتائجك وتقييم مستواك بالكود.</p></div><span class="service-arrow">←</span></a>
-<a class="app-service-card" href="student.html"><span class="iconbox" data-icon="calendar"></span><div><h3>الحضور</h3><p>تابع الحضور والغياب ومواعيدك.</p></div><span class="service-arrow">←</span></a>
-<a class="app-service-card" href="materials.html"><span class="iconbox" data-icon="file-text"></span><div><h3>الملفات</h3><p>ملفات PDF وأسئلة وواجبات للمراجعة.</p></div><span class="service-arrow">←</span></a>
-<a class="app-service-card" href="#contact"><span class="iconbox" data-icon="phone"></span><div><h3>التواصل</h3><p>تواصل بسهولة للحجز أو الاستفسار.</p></div><span class="service-arrow">←</span></a>
+<div class="science-service-grid">
+<a class="science-service-card science-service-online" href="online.html"><span class="iconbox" data-icon="external-link"></span><div><h3>قسم الأونلاين</h3><p>روابط البث المباشر وتسجيلات Google Drive حسب صفك.</p></div><span class="service-arrow" aria-hidden="true">←</span></a>
+<a class="science-service-card" href="exams.html"><span class="iconbox" data-icon="clipboard"></span><div><h3>الامتحانات</h3><p>اختبارات إلكترونية ونتائج محفوظة.</p></div><span class="service-arrow" aria-hidden="true">←</span></a>
+<a class="science-service-card" href="student.html?login=1&amp;section=grades"><span class="iconbox" data-icon="bar-chart"></span><div><h3>درجاتي</h3><p>اعرف نتائجك وتقييم مستواك بالكود.</p></div><span class="service-arrow" aria-hidden="true">←</span></a>
+<a class="science-service-card" href="student.html?login=1&amp;section=attendance"><span class="iconbox" data-icon="calendar"></span><div><h3>الحضور</h3><p>تابع الحضور والغياب ومواعيدك.</p></div><span class="service-arrow" aria-hidden="true">←</span></a>
+<a class="science-service-card" href="materials.html"><span class="iconbox" data-icon="file-text"></span><div><h3>الملفات</h3><p>ملفات PDF وأسئلة وواجبات للمراجعة.</p></div><span class="service-arrow" aria-hidden="true">←</span></a>
+<a class="science-service-card" href="#contact"><span class="iconbox" data-icon="phone"></span><div><h3>التواصل</h3><p>تواصل بسهولة للحجز أو الاستفسار.</p></div><span class="service-arrow" aria-hidden="true">←</span></a>
 </div>
 </div>
 </section>
 <section class="section online-showcase" id="online">
-<div class="container online-showcase-grid">
-<div class="online-copy">
+<div class="container science-online-feature">
+<div class="science-online-feature-copy">
 <span class="kicker"><span data-icon="external-link"></span> فصلك الرقمي معاك دائمًا</span>
 <h2 class="section-title">تعلم بمرونة… وكمّل من المكان اللي وقفت عنده</h2>
 <p class="section-desc">كل طالب يشاهد محتوى صفه فقط باستخدام الكود الموحّد، مع متابعة تقدمه وظهور المحاضرات والتسجيلات المناسبة لاشتراكه.</p>
-<div class="online-benefits"><span><i data-icon="calendar"></i> تنبيه بموعد المحاضرة</span><span><i data-icon="book-open"></i> أكمل المشاهدة</span><span><i data-icon="user-check"></i> محتوى محمي بالكود</span></div>
+<ul class="science-online-feature-benefits"><li><span data-icon="calendar" aria-hidden="true"></span> تنبيه بموعد المحاضرة</li><li><span data-icon="book-open" aria-hidden="true"></span> أكمل المشاهدة</li><li><span data-icon="user-check" aria-hidden="true"></span> محتوى محمي بالكود</li></ul>
 <a class="btn primary" href="online.html"><span data-icon="external-link"></span> ادخل فصلك الأونلاين</a>
 </div>
-<div class="online-visual"><img src="assets/saad-promo.webp" alt="المستر سعد عويضة يقدم شرح الأحياء والعلوم" width="960" height="960" loading="lazy" decoding="async"/></div>
+<figure class="science-online-feature-visual">
+<img src="assets/teacher-480.webp" srcset="assets/teacher-480.webp 480w, assets/teacher.webp 1000w" sizes="(max-width: 700px) 280px, 320px" alt="المستر سعد عويضة" width="1000" height="991" loading="lazy" decoding="async">
+<figcaption><strong>مستر سعد عويضة</strong><span>الأحياء والعلوم المتكاملة</span></figcaption>
+</figure>
 </div>
 </section>
 <section class="section" id="booking">
@@ -124,7 +151,7 @@
 <h2 class="section-title">احجز مكانك في خطوات بسيطة</h2>
 <p class="section-desc">اكتب بيانات الطالب واختار الصف. لو المواعيد لسه منزلتش، سجّل عادي والمدرس هيتواصل معاك لتحديد المجموعة.</p>
 </div>
-<a class="btn ghost" href="student.html"><span data-icon="user"></span> عندي كود طالب</a>
+<a class="btn ghost" href="student.html?login=1"><span data-icon="user"></span> عندي كود طالب</a>
 </div>
 <div class="booking-clean-layout">
 <form class="card grid grid-2 booking-form-compact" id="bookingForm">
@@ -159,7 +186,7 @@
 <div class="container">
 <div class="section-head">
 <div><span class="kicker"><span data-icon="star"></span> لوحة أوائل الطلاب</span><h2 class="section-title">تحفيز شهري للطلاب المتميزين</h2><p class="section-desc">ترتيب تلقائي حسب الدرجات والحضور والتسميع والواجب من بيانات المنصة.</p></div>
-<div class="mobile-actions leaderboard-head-actions"><button class="btn ghost" id="refreshLeaderboardButton" type="button" onclick="refreshPublicLeaderboard()"><span data-icon="refresh-cw"></span> تحديث الترتيب</button><a class="btn ghost" href="student.html"><span data-icon="user-check"></span> اعرف مستواك</a></div>
+<div class="mobile-actions leaderboard-head-actions"><button class="btn ghost" id="refreshLeaderboardButton" type="button" onclick="refreshPublicLeaderboard()"><span data-icon="refresh-cw"></span> تحديث الترتيب</button><a class="btn ghost" href="student.html?login=1"><span data-icon="user-check"></span> اعرف مستواك</a></div>
 </div>
 <div class="leaderboard-grade-picker"><label for="leaderboardGrade">اعرض أوائل صف</label><select id="leaderboardGrade"><option>رابعة ابتدائي</option><option>خامسة ابتدائي</option><option>سادسة ابتدائي</option><option>أولى إعدادي</option><option>تانية إعدادي</option><option>تالتة إعدادي</option><option>أولى ثانوي</option><option>تانية ثانوي</option><option>تالتة ثانوي</option></select></div>
 <div class="grid grid-3" id="publicLeaderboard"></div>
@@ -216,12 +243,11 @@
     </a>
   </div>
 </footer>
-<nav aria-label="تنقل الهاتف" class="mobile-bottom">
-<a href="index.html"><span data-icon="atom"></span><span>الرئيسية</span></a>
-<a href="index.html#booking"><span data-icon="calendar"></span><span>الحجز</span></a>
-<a href="student.html"><span data-icon="user"></span><span>الطالب</span></a>
-<a href="parent.html"><span data-icon="users"></span><span>ولي الأمر</span></a>
-<a href="exams.html"><span data-icon="clipboard"></span><span>امتحان</span></a>
+<nav aria-label="تنقل الهاتف" class="science-mobile-nav">
+<a href="index.html" aria-current="page"><span data-icon="atom" aria-hidden="true"></span>الرئيسية</a>
+<a href="online.html"><span data-icon="book-open" aria-hidden="true"></span>المحاضرات</a>
+<a href="exams.html"><span data-icon="clipboard" aria-hidden="true"></span>الاختبارات</a>
+<a href="#booking"><span data-icon="calendar" aria-hidden="true"></span>الحجز</a>
 </nav>
 <div class="toast" id="toast"></div>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -231,7 +257,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
 <script defer src="assets/firebase-config.js?v=69.2.0"></script>
 <script defer src="assets/firebase-sync.js?v=69.2.0"></script>
-<script defer src="assets/app.js?v=69.2.0"></script>
+<script defer src="assets/app.js?v=3"></script>
 <script defer src="assets/v53-upgrades.js?v=69.2.0"></script>
 <script defer src="assets/v56-fixes.js?v=69.2.0"></script>
 </body>

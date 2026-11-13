@@ -1,9 +1,9 @@
-const CACHE_NAME = "mf-science-v7000-resilient-assessments";
+const CACHE_NAME = "mf-science-v7000-resilient-assessments-science-ui2";
 const APP_SHELL = [
   "/", "/index.html", "/student.html", "/online.html", "/exams.html", "/materials.html",
   "/services.html", "/parent.html", "/reviews.html", "/privacy.html",
   "/terms.html", "/offline.html", "/assets/platform.css", "/assets/platform.js", "/assets/firebase-lazy.js",
-  "/assets/online.js", "/assets/firebase-sync.js", "/assets/firebase-config.js",
+  "/assets/science-experience.css", "/assets/online.js", "/assets/firebase-sync.js", "/assets/firebase-config.js",
   "/teacher-login.html", "/teacher.webmanifest",
   "/assets/logo-icon.svg", "/assets/icon-192.png",
   "/assets/icon-512.png", "/assets/icon-maskable-512.png", "/site.webmanifest"
@@ -102,13 +102,16 @@ self.addEventListener("fetch", event => {
     // Versioned static assets are returned from cache immediately on repeat
     // visits while a background request refreshes them. Large QR and Excel
     // bundles enter this cache only after the user actually opens that tool.
-    const network=fetch(request).then(async response=>{
+    const fetchAsset=()=>fetch(request).then(async response=>{
       if(response.ok){const cache=await caches.open(CACHE_NAME);await cache.put(request,response.clone());}
       return response;
     });
-    event.respondWith(caches.match(request,{ignoreSearch:true}).then(cached=>{
+    event.respondWith(caches.open(CACHE_NAME).then(async cache=>{
+      const cached=await cache.match(request);
+      if(cached&&url.searchParams.has("v"))return cached;
+      const network=fetchAsset();
       if(cached){event.waitUntil(network.catch(()=>null));return cached;}
-      return network.catch(()=>caches.match(request,{ignoreSearch:true}));
+      return network.catch(()=>Response.error());
     }));
   }
 });
