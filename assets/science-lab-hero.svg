@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" fill="none">
+  <defs>
+    <radialGradient id="halo"><stop stop-color="#0e857e" stop-opacity=".6"/><stop offset="1" stop-color="#0e857e" stop-opacity="0"/></radialGradient>
+    <linearGradient id="metal" x2="1" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#b9f3f0"/><stop offset="1" stop-color="#429bab"/></linearGradient>
+    <linearGradient id="liquid" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#65efce"/><stop offset="1" stop-color="#097f82"/></linearGradient>
+  </defs>
+  <ellipse cx="310" cy="210" rx="310" ry="195" fill="url(#halo)"/>
+  <g stroke="#77e3de" opacity=".35">
+    <circle cx="294" cy="190" r="157" stroke-dasharray="3 8"/>
+    <circle cx="294" cy="190" r="133"/>
+    <path d="M77 240l36-21 36 21v42l-36 21-36-21zm36-21v-40m36 61 35-20m299-82 32-18 32 18v38l-32 18-32-18zm32-18V84m32 92 29 18"/>
+    <circle cx="113" cy="179" r="5" fill="#77e3de"/><circle cx="515" cy="84" r="5" fill="#77e3de"/>
+  </g>
+  <path d="M80 337h480" stroke="#5eb7be" stroke-opacity=".5" stroke-width="2"/>
+  <g transform="translate(203 62)">
+    <path d="M115 71c73 15 92 131 17 172H90" stroke="#194c60" stroke-width="37" stroke-linecap="round"/>
+    <path d="M115 71c73 15 92 131 17 172H90" stroke="url(#metal)" stroke-width="23" stroke-linecap="round"/>
+    <path d="M91 23l-44 90m16-85 47 23" stroke="#092d43" stroke-width="32" stroke-linecap="round"/>
+    <path d="M91 23l-44 90m16-85 47 23" stroke="url(#metal)" stroke-width="21" stroke-linecap="round"/>
+    <path d="m49 108-13 29" stroke="#ffd477" stroke-width="12" stroke-linecap="round"/>
+    <rect x="17" y="156" width="113" height="13" rx="6" fill="#8ae4db"/>
+    <path d="M38 255h131c12 0 22 10 22 22H16c0-12 10-22 22-22Z" fill="url(#metal)"/>
+    <circle cx="159" cy="132" r="13" fill="#ffd477"/>
+  </g>
+  <g transform="translate(403 173)">
+    <path d="M23 8h42m-33 0v51L6 113c-7 14-1 25 13 25h49c14 0 20-11 13-25L56 59V8" fill="#0e354b" stroke="#9ee4e1" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M24 88c18 12 30-12 44 0l12 26c6 13 1 21-12 21H19c-13 0-18-8-12-21Z" fill="url(#liquid)"/>
+    <circle cx="35" cy="110" r="4" fill="#ccfff1"/><circle cx="55" cy="118" r="5" fill="#ccfff1"/>
+  </g>
+  <g fill="#ffd477"><circle cx="112" cy="103" r="4"/><circle cx="459" cy="99" r="3"/><circle cx="530" cy="244" r="4"/></g>
+</svg>

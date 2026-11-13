@@ -125,6 +125,7 @@ for (const relative of visibleSourceFiles) {
 if (!failures.some(x => x.includes('V64') || x.includes('Legacy teacher title'))) ok('V64 mobile-first design and Mister naming checks passed');
 
 const onlineHtml = read('online.html');
+const onlineDashboardSource = read('assets/online.js');
 const storageCompatIndex = onlineHtml.indexOf('firebase-storage-compat.js');
 const firebaseSyncIndex = onlineHtml.indexOf('assets/firebase-sync.js');
 if (storageCompatIndex < 0 || firebaseSyncIndex < 0 || storageCompatIndex > firebaseSyncIndex) {
@@ -151,7 +152,7 @@ if (!questionsRedirect) fail('Permanent questions.html to materials.html redirec
 if (read('scripts/build.js').includes("'questions.html': [")) fail('Redirect-only questions page must not be included in generated SEO sitemap pages');
 if (!failures.some(x => x.includes('questions.html'))) ok('Questions redirect and sitemap configuration passed');
 
-if (!onlineHtml.includes('aria-label="تصفية حسب الصف"') || !onlineHtml.includes('aria-label="تصفية حسب الترم"') || !onlineHtml.includes('aria-label="تصفية حسب الوحدة"')) {
+if (!onlineDashboardSource.includes('aria-label="تصفية حسب الصف"') || !onlineDashboardSource.includes('aria-label="تصفية حسب الترم"') || !onlineDashboardSource.includes('aria-label="تصفية حسب الوحدة"')) {
   fail('Online filter accessible names are missing');
 }
 const reviewsHtml = read('reviews.html');
@@ -452,7 +453,7 @@ if (!read('assets/v61.css').includes('.absence-warning-card') || !read('assets/v
 if (!adminSourceCode.includes('handleContinuousQrScan') || !adminSourceCode.includes('keepScannerOpen:true') || !read('assets/site.css').includes('.continuous-qr-status')) fail('Continuous teacher attendance scanning is incomplete');
 if (!appSourceCode.includes("document.getElementById('bookingTerm')") || !appSourceCode.includes('activeSchedulesForGrade(grade,deliveryMode,term)') || !adminSourceCode.includes('name="term" required')) fail('Booking term and schedule targeting are incomplete');
 if (!functionsSource.includes('schedule.term') || !functionsSource.includes('requestedTerm')) fail('Secure booking term validation is incomplete');
-if (!read('online.html').includes('online-filter-panel') || !read('online.html').includes('<footer class="footer') || !read('assets/site.css').includes('body.mobile-nav-active .mobile-bottom{display:grid!important')) fail('Online mobile filters, footer, or bottom navigation are incomplete');
+if (!onlineDashboardSource.includes('online-filter-panel') || !onlineHtml.includes('id="onlineDashboardMount"') || !onlineHtml.includes('<footer class="footer') || !read('assets/site.css').includes('body.mobile-nav-active .mobile-bottom{display:grid!important')) fail('Online mobile filters, footer, or bottom navigation are incomplete');
 if (!functionsSource.includes('schedule.capacity') || !adminSourceCode.includes('capacity')) fail('Schedule capacity enforcement is incomplete');
 if (!functionsSource.includes('exports.createStudentTransferRequest') || !functionsSource.includes('exports.reviewStudentTransferRequest') || !appSourceCode.includes('bindStudentTransferForms') || !adminSourceCode.includes('renderStudentRequests')) fail('Student group-transfer request workflow is incomplete');
 if (!functionsSource.includes('exports.saveGroupSchedule') || !functionsSource.includes('exports.deleteGroupSchedule') || !firebaseSyncSourceCode.includes('saveGroupSchedule') || !rules.includes('match /student_transfer_requests/{id}')) fail('Secure schedule propagation or transfer-request rules are incomplete');

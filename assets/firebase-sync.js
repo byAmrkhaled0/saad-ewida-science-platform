@@ -106,6 +106,14 @@
       createReview:callable('createReview'),
       recordClassProgress:callable('recordClassProgress'),
       getExamDashboard:callable('getExamDashboard'),
+      manageParentReportArchive:callable('manageParentReportArchive'),
+      getArchivedParentReport:callable('getArchivedParentReport'),
+      saveCenterExamGrades:callable('saveCenterExamGrades'),
+      manageMonthlyRankingArchive:callable('manageMonthlyRankingArchive'),
+      publishAccountNotificationAdmin:callable('publishAccountNotificationAdmin'),
+      listAccountNotificationsAdmin:callable('listAccountNotificationsAdmin'),
+      getStudentAccountNotifications:callable('getStudentAccountNotifications'),
+      setStudentAccountNotificationRead:callable('setStudentAccountNotificationRead'),
       startExam:callable('startExam'),
       syncExamSession:callable('syncExamSession'),
       saveExamProgress:callable('saveExamProgress'),
@@ -688,22 +696,29 @@
       saveMonthlyPayment:async(record,student)=>{
         const profile=await getCurrentStaffProfile();if(!profile?.allowed)throw new Error('Not authorized');
         const s=normalizedStudent(student),monthKey=String(record?.monthKey||'').trim();
-        if(!s.studentCode||!/^\d{4}-\d{2}$/.test(monthKey))throw new Error('Invalid payment month');
+        if(!s.studentCode||!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey))throw new Error('Invalid payment month');
         const id=cleanDocId(`${s.studentCode}_${monthKey}`),paid=record?.paid===true,paymentDate=paid?String(record?.paymentDate||nowIso().slice(0,10)):'';
         const paymentRecord={...record,id,studentCode:s.studentCode,studentName:s.name,grade:s.grade,group:s.group,deliveryMode:s.deliveryMode,monthKey,paid,paymentDate,updatedBy:profile.email||profile.uid,updatedAt:serverTime()};
         const current={studentId:s.studentCode,studentCode:s.studentCode,studentName:s.name,grade:s.grade,group:s.group,deliveryMode:s.deliveryMode,monthKey,monthLabel:record?.monthLabel||'',paid,paymentDate};
         const studentPatch={paid,paymentDate,currentPaymentMonth:monthKey,updatedAt:serverTime()};
         const portalPatch={...studentPatch,studentCode:s.studentCode,parentCode:s.parentCode};
-        const ops=[
-          batch=>batch.set(db.collection('payment_records').doc(id),paymentRecord,{merge:true}),
-          batch=>batch.set(db.collection('payments').doc(cleanDocId(s.studentCode)),{...current,updatedAt:serverTime()},{merge:true}),
-          batch=>batch.set(db.collection('students').doc(cleanDocId(s.studentCode)),studentPatch,{merge:true}),
-          batch=>batch.set(db.collection('student_portal').doc(cleanDocId(s.studentCode)),portalPatch,{merge:true})
-        ];
-        if(s.parentCode)ops.push(batch=>batch.set(db.collection('parent_portal').doc(cleanDocId(s.parentCode)),portalPatch,{merge:true}));
+        const currentMonth=typeof cairoPortalDateKey==='function'?cairoPortalDateKey().slice(0,7):nowIso().slice(0,7);
+        const ops=[batch=>batch.set(db.collection('payment_records').doc(id),paymentRecord,{merge:true})];
+        if(monthKey===currentMonth){
+          ops.push(
+            batch=>batch.set(db.collection('payments').doc(cleanDocId(s.studentCode)),{...current,updatedAt:serverTime()},{merge:true}),
+            batch=>batch.set(db.collection('students').doc(cleanDocId(s.studentCode)),studentPatch,{merge:true}),
+            batch=>batch.set(db.collection('student_portal').doc(cleanDocId(s.studentCode)),portalPatch,{merge:true})
+          );
+          if(s.parentCode)ops.push(batch=>batch.set(db.collection('parent_portal').doc(cleanDocId(s.parentCode)),portalPatch,{merge:true}));
+        }
         await commitOperations(ops);
-        await logActivity(paid?'تم تسجيل اشتراك شهري':'تم إلغاء اشتراك شهري',{studentCode:s.studentCode,monthKey});
         return {...paymentRecord,updatedAt:nowIso()};
+      },
+      remindMissingHomeworkAdmin:async assignmentId=>{
+        if(!functions)throw new Error('Homework reminder service unavailable');
+        const result=await functions.httpsCallable('remindMissingHomeworkAdmin')({assignmentId});
+        return result.data;
       },
       reviewHomeworkSubmission:async(id,review)=>{
         if(!calls.reviewHomeworkSubmission)throw new Error('Secure homework review service is unavailable');
@@ -786,6 +801,14 @@
         if(!calls.recordClassProgress)throw new Error('Secure class progress service is unavailable');
         return retryTransient(()=>calls.recordClassProgress(record),1);
       },
+      manageParentReportArchive:data=>calls.manageParentReportArchive(data),
+      getArchivedParentReport:(code,monthKey)=>calls.getArchivedParentReport({code:normalizeCode(code),monthKey}),
+      saveCenterExamGrades:data=>calls.saveCenterExamGrades(data),
+      manageMonthlyRankingArchive:data=>calls.manageMonthlyRankingArchive(data),
+      publishAccountNotificationAdmin:data=>calls.publishAccountNotificationAdmin(data),
+      listAccountNotificationsAdmin:()=>calls.listAccountNotificationsAdmin({}),
+      getStudentAccountNotifications:studentCode=>calls.getStudentAccountNotifications({studentCode:normalizeCode(studentCode)}),
+      setStudentAccountNotificationRead:(studentCode,notification)=>calls.setStudentAccountNotificationRead({studentCode:normalizeCode(studentCode),...notification}),
       getExamDashboard:async studentCode=>{if(!calls.getExamDashboard)throw new Error('Secure exam dashboard function is unavailable');return calls.getExamDashboard({studentCode:normalizeCode(studentCode)});},
       startSecureExam:async(examId,studentCode)=>{if(!calls.startExam)throw new Error('Secure start exam function is unavailable');return calls.startExam({examId,studentCode:normalizeCode(studentCode)});},
       syncSecureExam:async(sessionId,studentCode)=>{if(!calls.syncExamSession)throw new Error('Secure exam sync function is unavailable');return calls.syncExamSession({sessionId,studentCode:normalizeCode(studentCode)});},

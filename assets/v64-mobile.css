@@ -64,6 +64,25 @@
     min-width: 42px;
   }
 
+  .site-header .header-actions > .science-header-entry:not(.theme-toggle) {
+    display: inline-flex !important;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: .55rem;
+    white-space: nowrap;
+    font-size: .75rem;
+  }
+
+  .site-header .science-header-entry [data-icon] { display: none; }
+  .site-header .v56-site-menu-button { margin-inline-start: 0; }
+
+  @media (max-width: 360px) {
+    .site-header .navbar { gap: 4px; }
+    .site-header .logo { gap: 4px; }
+    .site-header .logo small { white-space: normal; }
+    .site-header .site-brand-logo { width: 34px; height: 34px; }
+  }
+
   input,
   select,
   textarea {

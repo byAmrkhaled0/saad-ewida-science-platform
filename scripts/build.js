@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('node:crypto');
 const { transformSync } = require('esbuild');
 
 const root = path.resolve(__dirname, '..');
@@ -88,15 +89,7 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
   html = html.replace(/\?v=\d+(?:\.\d+)*/g, `?v=${release}`);
   html = html.replace(/<img(?![^>]*\bloading=)([^>]*?)>/gi, '<img loading="lazy" decoding="async"$1>');
   if (file === 'index.html') {
-    html = html.replace(/<img\s+loading="lazy"\s+decoding="async"([^>]*src=["']assets\/teacher\.webp["'][^>]*)>/i, '<img fetchpriority="high" decoding="async"$1>');
-    html = html.replace(/<img[^>]*src=["']assets\/teacher\.webp["'][^>]*>/i, tag => {
-      let seenDecoding=false, seenPriority=false;
-      return tag
-        .replace(/\sdecoding="async"/g, value => seenDecoding ? '' : (seenDecoding=true,value))
-        .replace(/\sfetchpriority="high"/g, value => seenPriority ? '' : (seenPriority=true,value));
-    });
     html = html.replace(/<link rel="preconnect" href="https:\/\/www\.gstatic\.com" crossorigin\/?>\s*/i,'');
-    html = html.replace('</head>', `<link rel="preload" as="image" href="assets/teacher-480.webp" media="(max-width: 900px)" fetchpriority="high">\n<link rel="preload" as="image" href="assets/teacher.webp" media="(min-width: 901px)" fetchpriority="high">\n</head>`);
   }
   if (file === 'index.html') {
     const schema = { '@context':'https://schema.org', '@graph':[
@@ -128,6 +121,9 @@ joinAssets(cssParts, 'platform.css');
 joinAssets(adminCssParts, 'admin-platform.css');
 joinAssets(publicJsParts, 'platform.js');
 joinAssets(adminJsParts, 'admin-platform.js');
+const assetVersions = new Map(fs.readdirSync(path.join(dist,'assets'),{withFileTypes:true})
+  .filter(entry=>entry.isFile())
+  .map(({name})=>[name,createHash('sha256').update(fs.readFileSync(path.join(dist,'assets',name))).digest('hex').slice(0,12)]));
 // Files superseded by the production bundles or not referenced by any page are
 // excluded from the deploy artifact to reduce transfer and cache storage.
 const legacyAdminAssets = ['v55-admin.js','v59-admin.js','v60-admin.js','v61-admin.js'];
@@ -160,10 +156,23 @@ for (const file of fs.readdirSync(dist).filter(name => name.endsWith('.html'))) 
     // paint. Load it after the page is visible or immediately on interaction.
     html = html.replace(/<script defer src=["']https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.5\/firebase-(?:app|auth|firestore|storage|functions)-compat\.js["']><\/script>\s*/gi, '');
     html = html.replace(/<script defer src=["']assets\/firebase-(?:config|sync)\.js[^>]*><\/script>\s*/gi, '');
-    html = html.replace('</body>', `<script defer src="assets/firebase-lazy.js?v=${release}" data-version="${release}"></script>\n</body>`);
+    html = html.replace('</body>', `<script defer src="assets/firebase-lazy.js?v=${release}" data-version="${assetVersions.get('firebase-sync.js')}"></script>\n</body>`);
   }
+  html = html.replace(/(assets\/([\w.-]+\.(?:css|js)))(?:\?v=[^"']+)?(?=["'])/g,(match,url,name)=>{
+    const version=assetVersions.get(name);
+    return version?`${url}?v=${version}`:match;
+  });
+  html = html.replace('</head>',`<meta name="science-online-version" content="${assetVersions.get('online.js')}">\n</head>`);
   fs.writeFileSync(filePath, html);
 }
+
+const workerPath=path.join(dist,'service-worker.js');
+const shellVersion=createHash('sha256').update(JSON.stringify([...assetVersions].sort())).digest('hex').slice(0,12);
+const worker=fs.readFileSync(workerPath,'utf8').replace(/const CACHE_NAME = "[^"]+"/,`const CACHE_NAME = "mf-science-v7000-${shellVersion}"`);
+fs.writeFileSync(workerPath,worker.replace(/"\/assets\/([\w.-]+\.(?:css|js))"/g,(match,name)=>{
+  const version=assetVersions.get(name);
+  return version?`"/assets/${name}?v=${version}"`:match;
+}));
 
 const sitemapPages = Object.keys(seoPages).filter(file => !privatePages.has(file));
 const today = new Date().toISOString().slice(0,10);

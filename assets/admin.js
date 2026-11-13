@@ -206,6 +206,8 @@ function adminEditorIsOpen(){return !!document.querySelector('.admin-form-modal:
 
 async function cloudDelete(collection,id){if(!window.MFCloud?.deleteDocument)throw new Error('Delete service unavailable');await window.MFCloud.deleteDocument(collection,id);return true;}
 function updateAdminSaveState(state='saved'){
+  const button=document.querySelector('[data-admin-save-button]');
+  if(button)button.disabled=state==='saving';
   const el=document.getElementById('adminSaveState');if(!el)return;
   el.dataset.state=state;
   el.textContent=state==='dirty'?'تغييرات غير محفوظة':state==='saving'?'جارٍ الحفظ…':'تم الحفظ';
@@ -301,12 +303,15 @@ function scheduleAdminRecordBackground(section=currentSection){
       await loadNextAdminRecordType(type);
     }
     updateAdminRecordStatus();
+    if(token===adminRecordBackgroundToken&&currentSection==='payments')document.getElementById('paymentMonth')?.dispatchEvent(new Event('input'));
   },120);
 }
 window.finishAdminSectionRecords=async function(){
   const section=currentSection,types=adminSectionRecordTypes[section]||[];++adminRecordBackgroundToken;
   types.forEach(type=>{adminRecordStates[type].error='';});
-  for(const type of types)while(currentSection===section&&adminRecordStates[type].hasMore&&adminRecordStates[type].received<adminRecordLimits[type])await loadNextAdminRecordType(type);
+  for(const type of types)while(currentSection===section&&adminRecordStates[type].hasMore&&adminRecordStates[type].received<adminRecordLimits[type]){
+    if(!await loadNextAdminRecordType(type))break;
+  }
   if(currentSection===section&&!adminEditorIsOpen())renderSection();
 };
 
@@ -366,7 +371,9 @@ async function bootAdminSession(user){
     aToast('تم الدخول، جارٍ تحديث أحدث البيانات…');
     try{
       await reloadFromCloud();
-      if(document.querySelector('.admin-page'))renderSection();
+      if(document.querySelector('.admin-page')){
+        renderSection();
+      }
       aToast('تم تحديث بيانات لوحة المدرس');
     }catch(error){
       console.warn('admin-core-background-load',error);
@@ -388,6 +395,7 @@ async function tryRestoreSession(){
 function adminSectionName(id){return adminSections.find(([sectionId])=>sectionId===id)?.[2]||'الرئيسية';}
 function setAdminDrawer(open){
   const shouldOpen=!!open;
+  document.querySelector('.admin-menu-button')?.setAttribute('aria-expanded',String(shouldOpen));
   document.body.classList.toggle('admin-drawer-open',shouldOpen);
   document.getElementById('adminDrawerBackdrop')?.classList.toggle('show',shouldOpen);
   const mobile=window.matchMedia?.('(max-width:980px)').matches;
@@ -410,9 +418,13 @@ function setAdminDrawer(open){
 }
 window.toggleAdminDrawer=function(open){setAdminDrawer(open ?? !document.body.classList.contains('admin-drawer-open'));};
 function syncAdminChrome(){
-  document.querySelectorAll('[data-admin-nav]').forEach(btn=>btn.classList.toggle('active',btn.dataset.adminNav===currentSection));
-  const label=document.getElementById('adminCurrentSectionLabel');
-  if(label) label.textContent=adminSectionName(currentSection);
+  document.querySelectorAll('[data-admin-nav]').forEach(btn=>{
+    const active=btn.dataset.adminNav===currentSection;
+    btn.classList.toggle('active',active);
+    if(active)btn.setAttribute('aria-current','page');
+    else btn.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('[data-admin-section-label],#adminCurrentSectionLabel').forEach(label=>label.textContent=adminSectionName(currentSection));
 }
 window.goAdminSection=async function(id){
   if(!canOpenAdminSection(id))return aToast('الحساب لا يملك صلاحية فتح هذا القسم');
@@ -438,32 +450,52 @@ function renderAdmin(){
   fresh();
   document.body.classList.add('admin-dashboard-active');
   const root=document.getElementById('adminRoot');
-  root.className='admin-page admin-page-v37';
+  root.className='admin-page admin-page-v37 science-admin-workspace';
   root.innerHTML=`
     <div class="admin-drawer-backdrop" id="adminDrawerBackdrop" onclick="toggleAdminDrawer(false)"></div>
     <aside class="admin-sidebar" id="adminSidebar" aria-label="أقسام لوحة التحكم">
       <div class="admin-sidebar-head">
-        <div class="logo"><img class="admin-brand-logo" src="assets/icon-192.png" width="54" height="54" alt="لوجو منصة المستر سعد عويضة"><span>لوحة المستر سعد <small>حساب ${safe(currentStaff?.role||'staff')}</small></span></div>
+        <div class="logo science-admin-brand"><img class="admin-brand-logo" src="assets/icon-192.png" width="48" height="48" alt=""><span>المستر سعد عويضة<small>أحياء وعلوم</small></span></div>
         <button class="admin-sidebar-close" type="button" aria-label="إغلاق القائمة" onclick="toggleAdminDrawer(false)">×</button>
       </div>
       <div class="admin-nav">${adminNavMarkup()}</div>
-      <div class="admin-sidebar-footer"><button class="btn ghost" type="button" onclick="location.href='index.html'"><span data-icon="external-link"></span> معاينة الموقع</button></div>
+      <div class="admin-sidebar-footer">
+        <div class="science-admin-account"><span class="student-avatar" aria-hidden="true">${safe(String(currentStaff?.name||'س').charAt(0))}</span><span><b>${safe(currentStaff?.name||'مستر سعد عويضة')}</b><small>حساب الإدارة</small></span></div>
+        <div class="science-admin-session-actions">
+          <a class="btn ghost" href="index.html"><span data-icon="external-link" aria-hidden="true"></span>معاينة الموقع</a>
+          <button class="btn danger" type="button" onclick="adminLogout()">تسجيل الخروج</button>
+        </div>
+      </div>
     </aside>
     <main class="admin-main">
       <header class="admin-mobile-header">
-        <button class="admin-menu-button" type="button" aria-label="فتح قائمة لوحة التحكم" onclick="toggleAdminDrawer(true)"><span aria-hidden="true">☰</span></button>
-        <div><small>مرحبًا مستر سعد</small><strong id="adminCurrentSectionLabel">${safe(adminSectionName(currentSection))}</strong></div>
-        <button class="admin-mobile-home" type="button" aria-label="معاينة الموقع" onclick="location.href='index.html'"><span data-icon="external-link"></span></button>
+        <button class="admin-menu-button" type="button" aria-label="فتح قائمة لوحة التحكم" aria-controls="adminSidebar" aria-expanded="false" onclick="toggleAdminDrawer(true)"><span data-icon="menu" aria-hidden="true"></span></button>
+        <div class="science-admin-brand"><img src="assets/icon-192.png" width="36" height="36" alt=""><span><small>المستر سعد عويضة</small><strong id="adminCurrentSectionLabel">${safe(adminSectionName(currentSection))}</strong></span></div>
+        <div class="science-admin-mobile-tools"><span data-admin-bell-mobile></span><button class="admin-mobile-home" type="button" data-admin-mobile-tools-toggle aria-label="أدوات الإدارة" aria-controls="scienceAdminTools" aria-expanded="false"><span data-icon="more-horizontal" aria-hidden="true"></span></button></div>
       </header>
-      <div class="admin-top">
-        <div class="admin-welcome"><span class="kicker"><span data-icon="sparkles"></span> لوحة المدرس</span><h1 class="section-title">أهلًا يا مستر سعد 👋</h1><p>يوم موفق! طلابك وحجوزاتك ومتابعتك كلها جاهزة من هنا.</p></div>
+      <div class="admin-top" id="scienceAdminTools">
         <div class="admin-top-tools">
           <label class="admin-global-search"><span data-icon="search"></span><input id="adminGlobalSearch" type="search" autocomplete="off" placeholder="ابحث عن طالب أو حجز أو محتوى"><span class="admin-search-shortcut">Ctrl K</span></label>
           <div id="adminSearchResults" class="admin-search-results" hidden></div>
-          <div class="header-actions"><span class="admin-save-state" id="adminSaveState" data-state="saved">تم الحفظ</span><button class="theme-toggle" id="themeToggleAdmin" aria-label="تغيير الوضع"></button><button class="btn ghost" type="button" onclick="enableBookingNotifications()"><span data-icon="calendar"></span><span>تنبيهات الحجز</span></button><button class="btn ghost" type="button" onclick="forceFirestoreSync()"><span data-icon="refresh-cw"></span><span>حفظ</span></button><button class="btn dark" type="button" onclick="adminLogout()">خروج</button></div>
+          <div class="header-actions"><span data-admin-bell-desktop><button type="button" class="science-bell" data-admin-bell aria-label="متابعة الإدارة" aria-haspopup="dialog" aria-controls="scienceAdminNotifications"><span data-icon="bell" aria-hidden="true"></span></button></span><span class="admin-save-state" id="adminSaveState" data-state="saved" role="status">تم الحفظ</span><button class="theme-toggle" id="themeToggleAdmin" aria-label="تغيير الوضع"></button><button class="btn ghost" type="button" onclick="enableBookingNotifications()"><span data-icon="calendar" aria-hidden="true"></span><span>تنبيهات الحجز</span></button><button class="btn primary" type="button" data-admin-save-button onclick="forceFirestoreSync()"><span data-icon="save" aria-hidden="true"></span><span>حفظ التغييرات</span></button><button class="btn ghost" type="button" data-admin-guide><span data-icon="book-open" aria-hidden="true"></span>دليل الاستخدام</button></div>
         </div>
       </div>
+      <aside class="science-guide-invite" aria-label="جولة تعريفية" hidden>
+        <span class="science-guide-icon" data-icon="book-open" aria-hidden="true"></span>
+        <div><strong>أول مرة في لوحة الإدارة؟</strong><p>جولة سريعة تعرّفك على أهم الأدوات.</p></div>
+        <div class="science-guide-actions"><button class="btn primary" type="button" data-admin-guide>ابدأ الجولة</button><button class="small-btn ghost" type="button" data-guide-dismiss>مش دلوقتي</button></div>
+      </aside>
       <div id="adminContent"></div>
+      <dialog class="science-notification-dialog science-admin-attention-drawer" id="scienceAdminNotifications" aria-labelledby="scienceAdminNotificationsTitle">
+        <div class="science-notification-head"><div><small>المتابعة</small><h2 id="scienceAdminNotificationsTitle">تنبيهات الإدارة</h2></div><form method="dialog"><button class="science-bell" type="submit" aria-label="إغلاق الإشعارات"><span data-icon="close" aria-hidden="true"></span></button></form></div>
+        <div class="science-notification-list" data-admin-notification-list></div>
+      </dialog>
+      <aside class="science-admin-guide" id="scienceAdminGuide" aria-labelledby="scienceAdminGuideTitle" hidden>
+        <div class="science-guide-heading"><span class="science-guide-icon" data-guide-icon aria-hidden="true"></span><span data-guide-count></span><button class="small-btn ghost" type="button" data-guide-dismiss>تخطّي الجولة</button></div>
+        <div class="science-guide-copy" aria-live="polite" aria-atomic="true"><h2 id="scienceAdminGuideTitle" tabindex="-1"></h2><p data-guide-description></p></div>
+        <progress data-guide-progress aria-label="تقدّم الجولة"></progress>
+        <div class="science-guide-actions"><button class="btn primary" type="button" data-guide-next>التالي</button><button class="small-btn ghost" type="button" data-guide-back>السابق</button></div>
+      </aside>
     </main>
     <div class="admin-quick-add" id="adminQuickAdd">
       <div class="admin-quick-add-menu" id="adminQuickAddMenu" hidden>
@@ -475,12 +507,26 @@ function renderAdmin(){
       <button class="admin-quick-add-button" type="button" aria-label="إضافة سريعة" aria-expanded="false" onclick="toggleAdminQuickAdd()"><span aria-hidden="true">+</span></button>
     </div>
     <nav class="admin-mobile-bottom" aria-label="التنقل السريع في لوحة التحكم">
-      ${[['overview','bar-chart','الرئيسية'],['bookings','calendar','الحجوزات'],['students','users','الطلاب'],['attendance','qr','الحضور']].map(([id,ic,name])=>`<button type="button" data-admin-nav="${id}" class="${id===currentSection?'active':''}"><span data-icon="${ic}"></span><span>${name}</span></button>`).join('')}
-      <button type="button" onclick="toggleAdminDrawer(true)"><span aria-hidden="true">☰</span><span>المزيد</span></button>
+      ${[['overview','bar-chart','الرئيسية'],['students','users','الطلاب'],['attendance','qr','الحضور'],['payments','database','المالية']].filter(([id])=>canOpenAdminSection(id)).map(([id,ic,name])=>`<button type="button" data-admin-nav="${id}" class="${id===currentSection?'active':''}"><span data-icon="${ic}"></span><span>${name}</span></button>`).join('')}
+      <button type="button" aria-controls="adminSidebar" onclick="toggleAdminDrawer(true)"><span data-icon="more-horizontal" aria-hidden="true"></span><span>المزيد</span></button>
     </nav>`;
   setupTheme();
   bindNav();
   setupAdminGlobalSearch();
+  const mobileToolsToggle=root.querySelector('[data-admin-mobile-tools-toggle]');
+  const tools=root.querySelector('#scienceAdminTools');
+  mobileToolsToggle.addEventListener('click',()=>{
+    const open=tools.classList.toggle('science-tools-open');
+    mobileToolsToggle.setAttribute('aria-expanded',String(open));
+  });
+  tools.addEventListener('keydown',event=>{
+    if(event.key!=='Escape'||!tools.classList.contains('science-tools-open')||!mobileToolsToggle.getClientRects().length)return;
+    tools.classList.remove('science-tools-open');
+    mobileToolsToggle.setAttribute('aria-expanded','false');
+    mobileToolsToggle.focus();
+  });
+  bindAdminBell(root);
+  bindAdminGuide(root);
   setupAdminDirtyTracking();
   setAdminDrawer(false);
   renderSection();
@@ -722,28 +768,201 @@ function stats(){
   const homework=students.flatMap(student=>student.homeworks||[]).filter(item=>!item.approved&&item.status!=='تمت المراجعة').length;
   return {students:students.length,bookings:bookings.length,unpaid:students.filter(s=>!s.paid).length,att,receipts,corrections,homework,warnings:absenceWarnings().length,studentRequests:(adminData.studentTransferRequests||[]).filter(item=>item.status==='pending').length};
 }
-function renderOverview(){
-  const s=stats(),attention=[
+function adminAttentionItems(s){
+  return [
     ['bookings','calendar','حجوزات جديدة',s.bookings,'راجع بيانات الطلاب ووسيلة الدفع'],
     ['bookings','database','إيصالات تحتاج مراجعة',s.receipts,'اعتمد التحويل أو ارفضه'],
-    ['warnings','alert-triangle','تحذيرات غياب متتالي',s.warnings,'أرسل تنبيه واتساب لولي الأمر'],
+    ['warnings','alert-triangle','غياب متتالي',adminRecordStates.attendance.loaded?s.warnings:'—','تابع آخر حصتين غياب أو أكتر وجهّز رسالة لولي الأمر'],
+    ['payments','database','اشتراكات لم تُدفع',adminPaymentRecordsComplete()?unpaidAdminStudents(currentPaymentMonthKey()).length:'—','راجع اشتراكات الشهر الحالي وجهّز تذكير واتساب'],
     ['studentRequests','user-check','طلبات نقل مجموعات',s.studentRequests,'راجع طلب الطالب ووافق أو ارفض'],
     ['exams','clipboard','امتحانات تحتاج تصحيح',s.corrections,'صحح الأسئلة المقالية وانشر الدرجة'],
     ['assignments','file-text','واجبات تحتاج مراجعة',s.homework,'راجع ملفات تسليم الطلاب']
-  ];
-  content(`<div class="section-head admin-overview-head"><div><span class="kicker"><span data-icon="bar-chart"></span> نظرة سريعة</span><h2 class="section-title">كل المهم أمامك بدون زحمة</h2><p class="section-desc">ابدأ بالحاجات التي تحتاج تدخلك، ثم استخدم الإضافة السريعة لأي مهمة جديدة.</p></div><button class="btn primary" type="button" onclick="toggleAdminQuickAdd(true)">+ إضافة سريعة</button></div>
-  <div class="admin-overview-kpis">
-    <button class="card" type="button" onclick="goAdminSection('students')"><span data-icon="users"></span><small>إجمالي الطلاب</small><b>${s.students}</b></button>
-    <button class="card" type="button" onclick="goAdminSection('bookings')"><span data-icon="calendar"></span><small>حجوزات معلقة</small><b>${s.bookings}</b></button>
-    <button class="card" type="button" onclick="goAdminSection('payments')"><span data-icon="database"></span><small>غير مشترك</small><b>${s.unpaid}</b></button>
-    <button class="card" type="button" onclick="goAdminSection('attendance')"><span data-icon="qr"></span><small>حضور اليوم</small><b>${s.att}</b></button>
-  </div>
-  <div class="admin-overview-layout">
-    <section class="card admin-attention-panel"><div class="admin-panel-title"><div><span class="kicker">يحتاج تدخلك</span><h3>المهام الحالية</h3></div><span class="badge warn">${attention.reduce((sum,item)=>sum+item[3],0)}</span></div><div class="admin-attention-list">${attention.map(([section,icon,title,count,desc])=>`<button type="button" onclick="goAdminSection('${section}')"><span class="admin-attention-icon" data-icon="${icon}"></span><span><b>${title}</b><small>${desc}</small></span><strong>${count}</strong></button>`).join('')}</div></section>
-    <section class="card admin-quick-panel"><span class="kicker">اختصارات</span><h3>إدارة أسرع</h3><div class="admin-quick-grid"><button type="button" onclick="quickAdminCreate('student')"><span data-icon="user"></span>طالب جديد</button><button type="button" onclick="quickAdminCreate('exam')"><span data-icon="clipboard"></span>امتحان</button><button type="button" onclick="quickAdminCreate('lesson')"><span data-icon="book-open"></span>درس</button><button type="button" onclick="quickAdminCreate('assignment')"><span data-icon="file-text"></span>واجب</button><button type="button" onclick="goAdminSection('attendance');setTimeout(openQrScanner,100)"><span data-icon="qr"></span>ماسح QR</button><button type="button" onclick="goAdminSection('reports')"><span data-icon="bar-chart"></span>التقارير</button></div></section>
-  </div>`);
+  ].filter(([section])=>canOpenAdminSection(section));
 }
 
+const adminGuideSections={
+  overview:'الإجراءات السريعة تفتح نموذج الإضافة مباشرة. الجرس يفتح قائمة المتابعة، ومن كل تنبيه تقدر تروح للقسم المختص.',
+  bookings:'افتح الحجز لمراجعة بياناته وإيصال التحويل. القبول والرفض بيغيّروا حالة الحجز.',
+  students:'إضافة طالب تنشئ كود الدخول. تعديل يفتح بيانات الطالب، والملف يعرض سجلّه، ونسخ الكود ينسخه للحافظة.',
+  schedules:'إضافة مجموعة بتربط الصف بنوع الدراسة والميعاد. استخدم تعديل لتحديث بيانات مجموعة موجودة.',
+  attendance:'حدّد المجموعة والتاريخ قبل التسجيل. زر QR بيفتح الكاميرا عشان تقرأ كود الحضور.',
+  warnings:'راجع الغياب المتتالي. زر واتساب بيفتح مسودة على رقم ولي الأمر، وتقدر تراجعها قبل الإرسال.',
+  studentRequests:'افتح طلب نقل المجموعة وراجع التفاصيل قبل الموافقة أو الرفض.',
+  payments:'حدّد الشهر الأول. «دفع» يسجّل الاشتراك و«لم يدفع» يغيّر حالته. «السجل» يعرض الشهور السابقة، وتجهيز رسالة واتساب يفتح مسودة لولي الأمر.',
+  exams:'إنشاء امتحان يفتح محرر الأسئلة والتوقيت والاستهداف. راجع إعدادات الإتاحة قبل الحفظ، ومن المحاولات تقدر تراجع الإجابات والدرجات.',
+  assignments:'إنشاء واجب يفتح الأسئلة ورفع PDF وتحديد ميعاد الظهور والتسليم. افتح ملف الواجب لمراجعة التسليمات وتصحيحها.',
+  onlineContent:'إضافة درس بتحدد الصف والمجموعة ونوع الدراسة. راجع رابط الدرس أو التسجيل قبل الحفظ.',
+  materials:'استخدم إضافة ملف للمراجعات، وحدّد الصف اللي هيظهر له الملف.',
+  questionBank:'افتح البنك لمراجعة الأسئلة أو إضافة سؤال للصف المناسب.',
+  reviews:'افتح التقييم لمراجعته قبل اعتماده للنشر.',
+  reports:'اختار الطالب أو الفترة عشان تعرض التقرير. الطباعة والتصدير بيستخدموا النتائج الظاهرة.',
+  health:'راجع حالة الاتصال والبيانات قبل متابعة أي مشكلة في المزامنة.',
+  staff:'راجع صلاحيات المساعد قبل حفظ أي تغيير في حسابه.',
+  backup:'استخدم النسخة الاحتياطية لحفظ نسخة من البيانات. راجع محتوى الملف قبل الاستعادة.',
+  settings:'راجع القيمة اللي عدلتها قبل الحفظ، خصوصًا الإعدادات اللي بتظهر للطلاب.'
+};
+
+function bindAdminGuide(root){
+  const guide=root.querySelector('#scienceAdminGuide');
+  const invite=root.querySelector('.science-guide-invite');
+  const title=guide.querySelector('h2');
+  const icon=guide.querySelector('[data-guide-icon]');
+  const count=guide.querySelector('[data-guide-count]');
+  const progress=guide.querySelector('progress');
+  const next=guide.querySelector('[data-guide-next]');
+  const back=guide.querySelector('[data-guide-back]');
+  const storageKey='saad-admin-tour-invite-v2';
+  let steps=[],index=0,opener;
+  try{invite.hidden=localStorage.getItem(storageKey)==='dismissed';}catch{invite.hidden=false;}
+
+  function dismissInvite(){
+    invite.hidden=true;
+    try{localStorage.setItem(storageKey,'dismissed');}catch{}
+  }
+  function stop(){
+    const focusWasInside=guide.contains(document.activeElement);
+    guide.hidden=true;
+    delete root.dataset.guideStep;
+    if(!focusWasInside)return;
+    const fallback=[...root.querySelectorAll('.header-actions [data-admin-guide],[data-admin-mobile-tools-toggle]')].find(button=>button.getClientRects().length);
+    (opener?.getClientRects().length?opener:fallback)?.focus({preventScroll:true});
+  }
+  function showStep(){
+    const {key,label,description,glyph,target}=steps[index];
+    root.dataset.guideStep=key;
+    title.textContent=label;
+    guide.querySelector('[data-guide-description]').textContent=description;
+    icon.dataset.icon=glyph;
+    icon.replaceChildren();
+    hydrateIcons();
+    const format=new Intl.NumberFormat('ar-EG');
+    count.textContent=`خطوة ${format.format(index+1)} من ${format.format(steps.length)}`;
+    progress.max=steps.length;
+    progress.value=index+1;
+    back.hidden=index===0;
+    next.textContent=index===steps.length-1?'إنهاء الجولة':'التالي';
+    title.focus({preventScroll:true});
+    const anchor=target&&[...root.querySelectorAll(target)].find(element=>element.getClientRects().length);
+    if(anchor){
+      const rect=anchor.getBoundingClientRect();
+      if(rect.top<0||rect.bottom>guide.getBoundingClientRect().top-8){
+        anchor.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+      }
+    }
+  }
+  function start(event){
+    if(!guide.hidden){title.focus({preventScroll:true});return;}
+    opener=event.currentTarget;
+    dismissInvite();
+    const mobileToolsToggle=root.querySelector('[data-admin-mobile-tools-toggle]');
+    if(mobileToolsToggle.getAttribute('aria-expanded')==='true'&&mobileToolsToggle.getClientRects().length)mobileToolsToggle.click();
+    index=0;
+    steps=[
+      {key:'navigation',label:'أقسام الإدارة',description:'استخدم قائمة الأقسام عشان تتنقّل بين الطلاب والحضور والمالية وباقي الأدوات المتاحة لحسابك.',glyph:'menu',target:'.admin-menu-button,.admin-sidebar-head'}
+    ];
+    if(currentSection==='overview'){
+      const shortcuts=[
+        ['students','إضافة طالب','يفتح نموذج بيانات الطالب. بعد الحفظ يظهر كود الدخول للطالب وولي الأمر.','user'],
+        ['attendance','تسجيل الحضور','يفتح قسم الحضور والماسح. حدّد المجموعة والتاريخ قبل تسجيل الحضور.','qr'],
+        ['exams','إنشاء امتحان','يفتح محرر الامتحان. راجع الأسئلة والتوقيت والصف المستهدف قبل الحفظ.','clipboard'],
+        ['assignments','إنشاء واجب','يفتح نموذج الواجب. أضف أسئلة أو ملف، وحدّد الصف وموعد الظهور والتسليم.','file-text'],
+        ['onlineContent','إضافة درس','يفتح نموذج الدرس. حدّد الصف والمجموعة، وأضف رابط البث أو التسجيل.','book-open'],
+        ['reports','التقارير','يعرض الحضور والدرجات والدفع للفترة اللي تختارها.','bar-chart']
+      ];
+      for(const [key,label,description,glyph] of shortcuts){
+        const target=`[data-guide-target="${key}"]`;
+        if(root.querySelector(target))steps.push({key,label,description,glyph,target});
+      }
+    }else if(adminGuideSections[currentSection]){
+      steps.push({key:'section',label:adminSectionName(currentSection),description:adminGuideSections[currentSection],glyph:'book-open'});
+    }
+    steps.push({key:'attention',label:'جرس المتابعة',description:'يفتح تنبيهات الغياب المتتالي والاشتراكات وباقي المتابعات. اضغط على التنبيه عشان تروح للقسم المختص.',glyph:'bell',target:'[data-admin-bell]'});
+    guide.hidden=false;
+    showStep();
+  }
+  root.querySelectorAll('[data-admin-guide]').forEach(button=>button.addEventListener('click',start));
+  invite.querySelector('[data-guide-dismiss]').addEventListener('click',dismissInvite);
+  guide.querySelector('[data-guide-dismiss]').addEventListener('click',stop);
+  next.addEventListener('click',()=>{if(index===steps.length-1)stop();else{index++;showStep();}});
+  back.addEventListener('click',()=>{index--;showStep();});
+  guide.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();stop();}});
+}
+
+let adminBellLayoutObserver;
+function bindAdminBell(root){
+  const bell=root.querySelector('[data-admin-bell]');
+  const dialog=root.querySelector('#scienceAdminNotifications');
+  const list=dialog.querySelector('[data-admin-notification-list]');
+  const moveBell=()=>root.querySelector(root.querySelector('.admin-mobile-header').getClientRects().length?'[data-admin-bell-mobile]':'[data-admin-bell-desktop]').append(bell);
+  moveBell();
+  adminBellLayoutObserver?.disconnect();
+  adminBellLayoutObserver=new ResizeObserver(moveBell);
+  adminBellLayoutObserver.observe(root.querySelector('.admin-mobile-header'));
+  bell.addEventListener('click',()=>{
+    const items=adminAttentionItems(stats());
+    list.innerHTML=items.map(([section,icon,title,count,description])=>`<button type="button" data-admin-notice-section="${section}"><span data-icon="${icon}" aria-hidden="true"></span><span><strong>${title}</strong><small>${description}</small></span><b aria-label="${count==='—'?'افتح القسم لتحميل السجلات':count}">${count}</b></button>`).join('')||'<p>مفيش أقسام متابعة متاحة لحسابك.</p>';
+    hydrateIcons();
+    dialog.showModal();
+  });
+  list.addEventListener('click',async event=>{
+    const action=event.target.closest('[data-admin-notice-section]');
+    if(!action)return;
+    dialog.close();
+    const section=action.dataset.adminNoticeSection;
+    await goAdminSection(section);
+    if(section==='payments'&&currentSection==='payments'){
+      const month=document.getElementById('paymentMonth'),state=document.getElementById('paymentState');
+      if(!month||!state)return;
+      month.value=currentPaymentMonthKey();
+      state.value='unpaid';
+      state.dispatchEvent(new Event('input'));
+    }
+  });
+}
+function renderOverview(){
+  const s=stats(),attention=adminAttentionItems(s);
+  const settings=adminData.settings||{};
+  const period=[settings.term,settings.academicYear].filter(Boolean).join(' · ');
+  const dateLabel=new Intl.DateTimeFormat('ar-EG',{timeZone:'Africa/Cairo',weekday:'long',day:'numeric',month:'long'}).format(new Date());
+  const month=isoDateAdmin().slice(0,7);
+  const weeks=Array.from({length:4},()=>({present:0,total:0}));
+  if(canOpenAdminSection('attendance'))for(const student of adminData.students||[]){
+    for(const row of student.attendance||[]){
+      const date=String(row.date||'');
+      if(!date.startsWith(month)||!['present','absent','late'].includes(row.status))continue;
+      const day=Number(date.slice(8,10));
+      if(day<1||day>31||!Number.isFinite(day))continue;
+      const week=weeks[Math.min(3,Math.floor((day-1)/7))];
+      week.total++;
+      if(row.status!=='absent')week.present++;
+    }
+  }
+  const paidPercent=s.students?Math.round(100*(s.students-s.unpaid)/s.students):0;
+  const shortcuts=[
+    ['students','user','إضافة طالب',"quickAdminCreate('student')",'blue'],
+    ['attendance','qr','تسجيل الحضور',"goAdminSection('attendance');setTimeout(openQrScanner,100)",'mint'],
+    ['exams','clipboard','إنشاء امتحان',"quickAdminCreate('exam')",'rose'],
+    ['assignments','file-text','إنشاء واجب',"quickAdminCreate('assignment')",'amber'],
+    ['onlineContent','book-open','إضافة درس',"quickAdminCreate('lesson')",'blue'],
+    ['reports','bar-chart','التقارير',"goAdminSection('reports')",'blue']
+  ].filter(([section])=>canOpenAdminSection(section));
+  const kpis=[
+    ['students','users','طالب مسجل',s.students,'blue'],
+    ['attendance','qr','حضور اليوم',adminRecordStates.attendance.loaded?s.att:'—','mint'],
+    ['payments','database','اشتراك غير مكتمل',s.unpaid,'amber'],
+    ['exams','clipboard','ينتظر التصحيح',adminRecordStates.attempts.loaded?s.corrections:'—','blue']
+  ].filter(([section])=>canOpenAdminSection(section));
+  content(`<section class="science-admin-home-hero"><div><h2>مرحبًا، ${safe(currentStaff?.name||'مستر سعد عويضة')} <span aria-hidden="true">👋</span></h2><p>نظرة سريعة على المنصة والمهام المطلوبة اليوم</p></div><div class="science-admin-period"><span data-icon="calendar" aria-hidden="true"></span><span><b>${safe(dateLabel)}</b>${period?`<small>${safe(period)}</small>`:''}</span></div></section>
+  <div class="admin-overview-kpis">
+    ${kpis.map(([section,icon,label,value,tone])=>`<button class="card" data-tone="${tone}" type="button" onclick="goAdminSection('${section}')"><span data-icon="${icon}" aria-hidden="true"></span><small>${label}</small><b>${value}</b></button>`).join('')}
+  </div>
+  ${shortcuts.length?`<section class="card admin-quick-panel science-admin-quick-panel"><h3>إجراءات سريعة</h3><div class="admin-quick-grid">${shortcuts.map(([section,icon,label,action,tone])=>`<button type="button" data-tone="${tone}" data-guide-target="${section}" onclick="${action}"><span data-icon="${icon}" aria-hidden="true"></span>${label}</button>`).join('')}</div></section>`:''}
+  <div class="science-admin-home-widgets">
+    ${canOpenAdminSection('attendance')?`<section class="card science-admin-widget"><h3>الحضور الشهري</h3><small>من السجلات المحمّلة</small>${weeks.some(week=>week.total)?`<div class="science-admin-attendance-chart">${weeks.map((week,index)=>{const value=week.total?Math.round(100*week.present/week.total):null;return `<div><strong>${value===null?'—':value+'%'}</strong><span><i style="--science-chart-value:${value??0}%"></i></span><small>أسبوع ${index+1}</small></div>`;}).join('')}</div>`:'<p>مفيش سجلات حضور محمّلة للشهر الحالي.</p>'}</section>`:''}
+    ${canOpenAdminSection('payments')?`<section class="card science-admin-widget"><h3>حالات الدفع</h3><small>من بيانات الطلاب المحمّلة</small><div class="science-admin-payment-summary"><div class="science-admin-payment-ring" ${s.students?'':'data-empty'} style="--science-chart-value:${paidPercent}%" aria-hidden="true"><b>${s.students-s.unpaid}</b></div><div><p>اشتراك مكتمل <b>${s.students-s.unpaid}</b></p><p>اشتراك غير مكتمل <b>${s.unpaid}</b></p></div></div></section>`:''}
+    <section class="card admin-attention-panel science-admin-widget"><div class="admin-panel-title"><h3>المهام الحالية</h3></div><div class="admin-attention-list">${attention.map(([section,icon,title,count,desc])=>`<button type="button" onclick="goAdminSection('${section}')"><span class="admin-attention-icon" data-icon="${icon}"></span><span><b>${title}</b><small>${desc}</small></span><strong>${count}</strong></button>`).join('')||'<p>مفيش مهام متاحة لحسابك.</p>'}</div></section>
+  </div>`);
+}
 function studentRow(st){const s=normalizeStudent(st), c=calcStudentAdmin(s); return `<tr><td><b>${safe(s.studentCode)}</b><small style="display:block">موحّد للطالب وولي الأمر</small></td><td>${safe(s.name)}</td><td>${safe(s.grade)}</td><td>${safe(s.group||'-')}</td><td><span class="badge ${badgeStatus(s.paid)}">${s.paid?'تم الدفع في السنتر':'لم يتم الدفع في السنتر'}</span></td><td>${c.attendancePct||0}%</td><td>${c.avg||0}%</td><td><div class="pay-row"><button class="small-btn primary" onclick="editStudent('${safe(s.studentCode)}')">تعديل</button><button class="small-btn" onclick="copyStudentCodes('${safe(s.studentCode)}')">نسخ الكود</button><button class="small-btn danger" onclick="regenerateStudentCode('${safe(s.studentCode)}')">تغيير الكود الموحّد</button><button class="small-btn" onclick="quickPresent('${safe(s.studentCode)}')">حضور</button><button class="small-btn" onclick="printStudentReport('${safe(s.studentCode)}')">تفاصيل</button><button class="small-btn whatsapp-report-btn" onclick="sendParentMonthlyReport('${safe(s.studentCode)}')">واتساب</button><button class="small-btn danger" onclick="deleteStudent('${safe(s.studentCode)}')">حذف</button></div></td></tr>`;}
 function studentMobileCards(rows){return `<div class="student-mobile-cards">${rows.map(st=>{const s=normalizeStudent(st),c=calcStudentAdmin(s); return `<article class="mobile-admin-card"><div class="mobile-admin-card-head"><div><b>${safe(s.name)}</b><small>${safe(s.studentCode)} · ${safe(s.grade)} · ${safe(s.group||'-')}</small></div><span class="badge ${badgeStatus(s.paid)}">${s.paid?'تم الدفع في السنتر':'لم يتم الدفع في السنتر'}</span></div><div class="mobile-card-kpis"><span><small>الحضور</small><b>${c.attendancePct||0}%</b></span><span><small>الدرجات</small><b>${c.avg||0}%</b></span><span><small>التسميع</small><b>${c.recitationPct||0}%</b></span><span><small>الواجب</small><b>${c.homeworkPct||0}%</b></span></div><div class="mobile-primary-actions"><button type="button" class="small-btn primary" onclick="editStudent('${safe(s.studentCode)}')">تعديل</button><button type="button" class="small-btn" onclick="quickPresent('${safe(s.studentCode)}')">حضور</button><button type="button" class="small-btn whatsapp-report-btn" onclick="sendParentMonthlyReport('${safe(s.studentCode)}')">واتساب</button></div><details class="admin-more-actions"><summary>المزيد من الإجراءات</summary><div class="mobile-actions"><button type="button" class="small-btn" onclick="copyStudentCodes('${safe(s.studentCode)}')">نسخ الكود</button><button type="button" class="small-btn danger" onclick="regenerateStudentCode('${safe(s.studentCode)}')">تغيير الكود الموحّد</button><button type="button" class="small-btn" onclick="printStudentReport('${safe(s.studentCode)}')">التفاصيل</button><button type="button" class="small-btn danger" onclick="deleteStudent('${safe(s.studentCode)}')">حذف الطالب</button></div></details></article>`;}).join('')||'<p class="section-desc">لا يوجد طلاب.</p>'}</div>`;}
 function renderStudents(){fresh(); const rows=adminData.students.map(normalizeStudent); content(`<div class="section-head"><div><span class="kicker"><span data-icon="users"></span> الطلاب</span><h2 class="section-title">بيانات الطلاب والمتابعة</h2><p class="section-desc">لكل طالب كود وباركود موحّدان يفتحان بوابة الطالب وبوابة ولي الأمر.</p></div><button class="btn ghost" onclick="upgradeLegacyAccessCodes()">توحيد الأكواد القديمة</button></div><div class="card monthly-report-help-v38"><h3>تقارير أول الشهر</h3><p>زر واتساب بجوار الطالب ينشئ تقرير PDF مفصلًا يشمل الحضور والتسميع والدرجات والواجب والدفع والترتيب، ثم يفتح مشاركة الملف إلى واتساب على الموبايل.</p></div><div class="card" style="margin-bottom:18px"><form id="addStudentForm" class="grid grid-4"><input name="name" placeholder="اسم الطالب الثلاثي" minlength="8" required><input name="studentPhone" inputmode="tel" placeholder="رقم الطالب"><input name="parentPhone" inputmode="tel" placeholder="رقم ولي الأمر" required><select name="grade">${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><select name="month">${MONTHS.map(m=>`<option>${safe(m)}</option>`).join('')}</select><select name="group">${groupOptions().map(g=>`<option>${safe(g)}</option>`).join('')}</select><textarea name="notes" placeholder="ملاحظات المدرس"></textarea><button class="btn primary" type="submit"><span data-icon="user"></span> تسجيل طالب وإظهار الكود الموحّد</button></form></div><div class="admin-toolbar"><input id="studentSearchAdmin" placeholder="بحث بالكود أو رقم ولي الأمر"><select id="studentGradeAdmin"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><select id="studentPayAdmin"><option value="all">كل حالات اشتراك السنتر</option><option value="paid">تم الدفع في السنتر</option><option value="unpaid">لم يتم الدفع في السنتر</option></select><button class="btn ghost" onclick="refreshStudentsTable()"><span data-icon="search"></span> بحث</button></div><div id="studentsTableBox">${studentsTable(rows)}</div>`); document.getElementById('addStudentForm').onsubmit=async e=>{e.preventDefault(); const form=e.target; const button=form.querySelector('button[type="submit"]'); const input=Object.fromEntries(new FormData(form).entries()); input.studentPhone=phoneDigits(input.studentPhone); input.parentPhone=phoneDigits(input.parentPhone); input.studentName=input.name; input.paid=false; input.active=true; input.attendance=[]; input.grades=[]; input.homeworks=[]; input.recitations=[]; button.disabled=true; button.classList.add('is-loading'); try{const created=await window.MFCloud?.createStudentAccess?.(input); if(!created?.studentCode)throw new Error('تعذر إنشاء الكود'); const s={...input,...created,parentCode:created.studentCode,code:created.studentCode,id:created.studentCode}; adminData.students.push(s); saveData(adminData); aToast('تم تسجيل الطالب وإنشاء الكود الموحّد'); window.MFCloud?.logActivity?.('تم تسجيل طالب جديد',{studentCode:s.studentCode}).catch(()=>{}); form.reset(); renderStudents(); showIssuedCodes(s,'تم تسجيل الطالب وإصدار الكود الموحّد');}catch(error){aToast(adminActionErrorMessage(error,'تعذر تسجيل الطالب وإنشاء الكود.'));}finally{button.disabled=false; button.classList.remove('is-loading');}}; ['studentSearchAdmin','studentGradeAdmin','studentPayAdmin'].forEach(id=>document.getElementById(id)?.addEventListener('input',refreshStudentsTable));}
@@ -769,7 +988,7 @@ window.editStudent=function(code){
   hydrateIcons();
 };
 window.deleteStudent=async function(code){code=String(code||'');if(studentDeletionPending.has(code)||!confirm('سيتم إنشاء نسخة استرجاع ثم حذف الطالب وكل بياناته. متابعة؟'))return;const student=adminData.students.find(s=>stCode(s)===code);studentDeletionPending.add(code);try{const result=await window.MFCloud?.deleteStudentSafely?.(student||{studentCode:code});if(!result?.ok)throw new Error('تعذر تأكيد الحذف');adminData.students=adminData.students.filter(s=>stCode(s)!==code);saveData(adminData);aToast(result.backupMode==='browser'?'تم تنزيل نسخة استرجاع وحذف الطالب':'تم حفظ نسخة استرجاع وحذف الطالب');renderStudents();}catch(error){aToast(adminActionErrorMessage(error,'تعذر حذف الطالب بأمان، ولم يتم حذفه من القائمة.'));}finally{studentDeletionPending.delete(code);}};
-window.printStudentReport=function(code){const s=adminData.students.find(x=>stCode(x)===code);if(!s)return aToast('الطالب غير موجود');const normalized=normalizeStudent(s),mode=studentMode(normalized),assignments=(adminData.assignments||[]).filter(item=>(!item.grade||item.grade==='كل الصفوف'||item.grade===normalized.grade)&&(!item.deliveryMode||item.deliveryMode==='all'||item.deliveryMode===mode)&&(!item.group||item.group==='كل المجموعات'||item.group===normalized.group));try{sessionStorage.setItem('mf_admin_student_preview_v1',JSON.stringify({expiresAt:Date.now()+5*60*1000,student:{...normalized,assignments}}));}catch(error){}const url=new URL('student.html',location.href);url.searchParams.set('code',String(stCode(s)));url.searchParams.set('preview','staff');const preview=window.open(url.href,'_blank');if(preview)setTimeout(()=>{try{preview.opener=null;}catch(error){}},0);else location.href=url.href;};
+window.printStudentReport=function(code){const s=adminData.students.find(x=>stCode(x)===code);if(!s)return aToast('الطالب غير موجود');const normalized=normalizeStudent(s),assignments=(adminData.assignments||[]).filter(item=>assignmentIsReleasedClient(item)&&learningTargetMatchesStudentClient(item,normalized));try{sessionStorage.setItem('mf_admin_student_preview_v1',JSON.stringify({expiresAt:Date.now()+5*60*1000,student:{...normalized,assignments}}));}catch(error){}const url=new URL('student.html',location.href);url.searchParams.set('code',String(stCode(s)));url.searchParams.set('preview','staff');const preview=window.open(url.href,'_blank');if(preview)setTimeout(()=>{try{preview.opener=null;}catch(error){}},0);else location.href=url.href;};
 window.sendParentMonthlyReport=async function(code){const s=adminData.students.find(x=>stCode(x)===code);if(!s)return aToast('لم يتم العثور على الطالب');const phone=adminWhatsAppPhone(s.parentPhone);if(!phone)return aToast('رقم ولي الأمر غير موجود');const peers=(adminData.students||[]).filter(row=>normalizeStudent(row).grade===normalizeStudent(s).grade).map(row=>({row,score:calcStudentAdmin(normalizeStudent(row)).final||0})).sort((a,b)=>b.score-a.score);const rank=peers.findIndex(item=>stCode(item.row)===stCode(s))+1;try{await window.shareParentReportPdf({...s,platformRank:rank||0},phone);aToast('تم تجهيز تقرير PDF؛ اختر واتساب من نافذة المشاركة');}catch(error){console.error(error);aToast('تعذر إنشاء تقرير PDF. استخدم زر التفاصيل ثم حفظ PDF.');}};
 window.copyParentMonthlyReport=function(code){const s=adminData.students.find(x=>stCode(x)===code); if(!s)return aToast('لم يتم العثور على الطالب'); navigator.clipboard?.writeText(monthlyReportTextForStudent(s)).then(()=>aToast('تم نسخ التقرير')).catch(()=>aToast('تعذر النسخ'));};
 
@@ -1130,6 +1349,92 @@ function renderReports(){
   content(`<div class="section-head"><div><span class="kicker"><span data-icon="bar-chart"></span> التقارير</span><h2 class="section-title">تقرير شهري شامل</h2><p class="section-desc">الدفع والحضور والدرجات للسنتر والأونلاين في مكان واحد.</p></div><div class="section-head-actions"><button class="btn ghost" onclick="exportReportV63()">تصدير CSV</button><button class="btn primary" onclick="window.print()">طباعة / PDF</button></div></div><div class="card report-filter-bar"><div class="field"><label>الشهر</label><input id="reportMonth" type="month" value="${safe(month)}"></div><div class="field"><label>نوع الدراسة</label><select id="reportMode"><option value="all">السنتر والأونلاين</option><option value="center">السنتر</option><option value="online">الأونلاين</option></select></div><div class="field"><label>الصف</label><select id="reportGrade"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div></div><div id="reportResult"></div>`);
   const draw=()=>{const month=reportMonthPrefix(),students=reportStudentRows();sessionStorage.setItem('reportMonth',month);const paid=students.filter(student=>paymentRecordFor(student.studentCode,month)?.paid===true).length,attendance=students.flatMap(student=>(student.attendance||[]).filter(item=>String(item.date||'').startsWith(month))),present=attendance.filter(item=>item.status==='present').length,grades=students.flatMap(student=>(student.grades||[]).filter(item=>String(item.date||item.submittedAt||'').startsWith(month)&&item.score!==undefined&&item.score!==null)),avg=grades.length?Math.round(grades.reduce((sum,item)=>sum+Number(item.score||0),0)/grades.length):0;document.getElementById('reportResult').innerHTML=`<div class="grid grid-4 report-kpis"><article class="card"><small>الطلاب</small><b class="big-num">${students.length}</b></article><article class="card"><small>دفعوا الشهر</small><b class="big-num">${paid}</b></article><article class="card"><small>حضور مسجل</small><b class="big-num">${present}</b></article><article class="card"><small>متوسط الدرجات</small><b class="big-num">${avg}%</b></article></div><div class="card report-table"><div class="table-wrap"><table><thead><tr><th>الطالب</th><th>النوع</th><th>الصف والمجموعة</th><th>الدفع</th><th>الحضور</th><th>الدرجات</th></tr></thead><tbody>${students.map(student=>{const payment=paymentRecordFor(student.studentCode,month)||{},att=(student.attendance||[]).filter(item=>String(item.date||'').startsWith(month)),prs=att.filter(item=>item.status==='present').length,g=(student.grades||[]).filter(item=>String(item.date||item.submittedAt||'').startsWith(month)&&item.score!==undefined&&item.score!==null),score=g.length?Math.round(g.reduce((sum,item)=>sum+Number(item.score||0),0)/g.length):0;return `<tr><td><b>${safe(student.name)}</b><small>${safe(student.studentCode)}</small></td><td>${studentMode(student)==='online'?'أونلاين':'سنتر'}</td><td>${safe(student.grade)}<small>${safe(student.group||'-')}</small></td><td><span class="badge ${payment.paid?'good':'warn'}">${payment.paid?'تم الدفع':'لم يدفع'}</span></td><td>${prs}/${att.length}</td><td>${g.length?score+'%':'-'}</td></tr>`;}).join('')||'<tr><td colspan="6">لا توجد بيانات مطابقة</td></tr>'}</tbody></table></div></div>`;};
   ['reportMonth','reportMode','reportGrade'].forEach(id=>document.getElementById(id).oninput=draw);draw();hydrateIcons();
+  installArchiveTools();
+}
+
+function installArchiveTools(){
+  const host=document.querySelector('#adminContent .admin-section');
+  const month=cairoAdminDateKey().slice(0,7);
+  host.insertAdjacentHTML('beforeend',`<details class="card science-admin-tool"><summary>أرشيف تقارير ولي الأمر</summary>
+    <form data-report-archive-form><label>كود الطالب<input name="studentCode" autocomplete="off" maxlength="40" required></label>
+    <label>شهر التقرير<input name="monthKey" type="month" value="${month}" max="${month}" required></label><button class="btn primary" type="submit">معاينة التقرير</button></form>
+    <p data-report-archive-status role="status"></p><div data-report-archive-preview></div></details>
+    ${['admin','teacher'].includes(currentStaff?.role)?`<details class="card science-admin-tool"><summary>أرشيف ترتيب الشهر</summary>
+    <form data-ranking-archive-form><label>الشهر<input name="monthKey" type="month" value="${month}" max="${month}" required></label>
+    <button class="btn ghost" type="submit" value="view">عرض الترتيب المحفوظ</button><button class="btn primary" type="submit" value="freeze">تثبيت الترتيب وتهنئة الأوائل</button></form>
+    <p data-ranking-archive-status role="status"></p><div data-ranking-archive-results></div></details>`:''}`);
+  const form=host.querySelector('[data-report-archive-form]');
+  const reportStatus=host.querySelector('[data-report-archive-status]');
+  const preview=host.querySelector('[data-report-archive-preview]');
+  let selection, snapshot, busy=false;
+  const runReport=async action=>{
+    if(busy)return;
+    busy=true;
+    form.querySelector('button').disabled=true;
+    reportStatus.textContent='جاري تحميل التقرير…';
+    try{
+      if(action==='confirmDelivery'){
+        await window.MFCloud.manageParentReportArchive({...selection,action});
+        snapshot.deliveredAt=Date.now();
+      }else{
+        snapshot=await window.MFCloud.manageParentReportArchive({...selection,action});
+      }
+      const {report,archivedAt,deliveredAt}=snapshot;
+      reportStatus.textContent=deliveredAt?'تم تأكيد الإرسال يدويًا.':archivedAt?'التقرير محفوظ في الأرشيف.':'دي معاينة التقرير قبل الحفظ.';
+      preview.innerHTML=`<pre>${safe(parentReportText(report))}</pre><div class="action-row">
+        ${archivedAt?'':'<button class="btn primary" type="button" data-report-action="save">حفظ في الأرشيف</button>'}
+        <button class="btn ghost" type="button" data-report-action="pdf">تنزيل PDF</button>
+        <button class="btn ghost" type="button" data-report-action="whatsapp">فتح واتساب</button>
+        ${archivedAt&&!deliveredAt?'<button class="btn ghost" type="button" data-report-action="confirmDelivery">تأكيد إني بعت التقرير</button>':''}</div>`;
+    }catch(error){reportStatus.textContent=adminActionErrorMessage(error,'تعذّر تنفيذ العملية.');}
+    finally{busy=false;form.querySelector('button').disabled=false;}
+  };
+  form.addEventListener('submit',event=>{
+    event.preventDefault();
+    if(busy)return;
+    selection={studentCode:toEnglishDigits(form.elements.studentCode.value).trim().toUpperCase(),monthKey:form.elements.monthKey.value};
+    preview.replaceChildren();
+    runReport('preview');
+  });
+  preview.addEventListener('click',async event=>{
+    const action=event.target.closest('[data-report-action]')?.dataset.reportAction;
+    if(!action||!snapshot||busy)return;
+    if(action==='pdf'){
+      try{
+        const url=URL.createObjectURL(await window.createParentReportPdf(snapshot.report));
+        const link=document.createElement('a');
+        link.href=url;link.download=`تقرير-${selection.monthKey}.pdf`;link.click();
+        setTimeout(()=>URL.revokeObjectURL(url),30000);
+      }catch{reportStatus.textContent='تعذّر تجهيز ملف PDF.';}
+      return;
+    }
+    if(action==='whatsapp'){
+      const student=(adminData.students||[]).find(row=>String(stCode(row)).toUpperCase()===selection.studentCode);
+      const phone=adminWhatsAppPhone(student?.parentPhone);
+      if(!phone){reportStatus.textContent='رقم ولي الأمر مش متاح في قائمة الطلاب المحمّلة.';return;}
+      window.open(whatsappLink(phone,parentReportText(snapshot.report)),'_blank','noopener,noreferrer');
+      return;
+    }
+    runReport(action);
+  });
+  const ranking=host.querySelector('[data-ranking-archive-form]');
+  ranking?.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const action=event.submitter?.value||'view';
+    if(action==='freeze'&&!confirm('تثبيت ترتيب الشهر وإضافة تهنئة لأوائل كل صف داخل حساباتهم؟'))return;
+    const buttons=[...ranking.querySelectorAll('button')];
+    const status=host.querySelector('[data-ranking-archive-status]');
+    const results=host.querySelector('[data-ranking-archive-results]');
+    buttons.forEach(button=>button.disabled=true);
+    status.textContent='جاري تحميل الترتيب…';
+    results.replaceChildren();
+    try{
+      const {archive,rows}=await window.MFCloud.manageMonthlyRankingArchive({action,monthKey:ranking.elements.monthKey.value});
+      status.textContent=archive?`ترتيب محفوظ لـ ${archive.studentCount} طالب${archive.congratulatedAt?' · التهاني اتضافت في الحسابات':''}`:'لسه مفيش ترتيب محفوظ للشهر ده.';
+      results.innerHTML=rows.map(row=>`<div class="science-admin-archive-row"><b>${safe(row.rank)}. ${safe(row.name)}</b><span>${safe(row.grade)} · ${safe(row.score)}%</span></div>`).join('');
+    }catch(error){status.textContent=adminActionErrorMessage(error,error.message||'تعذّر تحميل ترتيب الشهر.');}
+    finally{buttons.forEach(button=>button.disabled=false);}
+  });
 }
 
 function renderAttendance(){fresh();const gOpts=['all',...GRADES],grpOpts=['all',...groupOptions()];content(`<div class="section-head compact-admin-head"><div><span class="kicker"><span data-icon="qr"></span> متابعة الحصة</span><h2 class="section-title">الحضور والتسميع والواجب</h2><p class="section-desc">سجّل حضور الطالب، ثم علّم على التسميع والواجب؛ كل علامة تُضاف لملفه وتدخل في ترتيب الانتظام.</p></div></div><div class="card attendance-control-card"><div class="attendance-filters"><select id="attendanceGrade">${gOpts.map(g=>`<option value="${safe(g)}">${g==='all'?'كل الصفوف':safe(g)}</option>`).join('')}</select><select id="attendanceGroup">${grpOpts.map(g=>`<option value="${safe(g)}">${g==='all'?'كل المجموعات':safe(g)}</option>`).join('')}</select><input id="attendanceDate" type="date" value="${attendanceDate}"></div><div class="attendance-actions"><button class="btn primary qr-open-btn" onclick="openQrScanner()"><span data-icon="qr"></span> مسح QR</button><button class="btn ghost" onclick="manualAttendancePrompt()"><span data-icon="user-check"></span> إدخال الكود</button><button class="btn ghost" onclick="markAbsentForMissing()"><span data-icon="calendar"></span> الباقي غياب</button></div></div><div class="attendance-summary-card card">${attendanceReportHTML()}</div><div class="card attendance-roster-card"><div class="profile-top"><div><h3>طلاب المجموعة</h3><p class="section-desc">الأزرار المعلّمة بعلامة ✓ محفوظة في ملف الطالب لنفس تاريخ الحصة.</p></div></div>${attendanceRosterHTML()}</div><details class="card attendance-history"><summary>عرض سجل اليوم بالتفصيل</summary>${attendanceLogHTML()}</details><div id="qrScannerModal" class="qr-modal" hidden><div class="card qr-modal-card"><div class="profile-top"><h3>ماسح QR الطالب</h3><button class="small-btn danger" onclick="closeQrScanner()">إغلاق</button></div><div id="adminQrReader"></div><p class="section-desc">وجّه كاميرا الموبايل على QR الطالب لتسجيل الحضور.</p></div></div>`);const gd=document.getElementById('attendanceGrade'),gr=document.getElementById('attendanceGroup'),date=document.getElementById('attendanceDate');if(gd)gd.value=sessionStorage.getItem('attGrade')||'all';if(gr)gr.value=sessionStorage.getItem('attGroup')||'all';if(date)date.onchange=()=>{attendanceDate=date.value;renderAttendance();};if(gd)gd.onchange=()=>{sessionStorage.setItem('attGrade',gd.value);renderAttendance();};if(gr)gr.onchange=()=>{sessionStorage.setItem('attGroup',gr.value);renderAttendance();};hydrateIcons();}
@@ -1177,18 +1482,52 @@ function professionalStudentCards(rows){return `<div class="professional-student
 function renderOnlineStudentsProfessional(){fresh();let source=(adminData.students||[]).map(normalizeStudent).filter(st=>st.deliveryMode==='online');content(`<div class="section-head"><div><span class="kicker"><span data-icon="external-link"></span> طلاب الأونلاين</span><h2 class="section-title">طلاب الأونلاين</h2><p class="section-desc">نفس الحضور والدرجات والواجب والدفع والتحفيز الشهري لطلاب السنتر.</p></div><button class="btn primary" onclick="openOnlineStudentModal()">+ إضافة طالب أونلاين</button></div><div class="card student-filter-bar"><input id="onlineStudentSearch2" type="search" placeholder="بحث بالاسم أو الكود أو الهاتف"><select id="onlineStudentGrade2"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><select id="onlineStudentPayment2"><option value="all">كل حالات الدفع</option><option value="paid">تم الدفع</option><option value="unpaid">لم يدفع</option></select><span id="onlineStudentCount">${source.length} طالب</span></div><div id="onlineStudentsProfessional">${professionalStudentCards(source)}</div><div class="admin-form-modal" id="onlineStudentModal" hidden><div class="admin-form-modal-card card"><div class="profile-top"><div><h2>إضافة طالب أونلاين</h2><p class="section-desc">أدخل البيانات ثم اختر موعدًا مطابقًا للصف.</p></div><button class="small-btn danger" onclick="closeOnlineStudentModal()">إغلاق</button></div><form id="onlineStudentProfessionalForm" class="admin-form-grid"><div class="field"><label>اسم الطالب الثلاثي</label><input name="name" placeholder="الاسم الثلاثي على الأقل" minlength="8" required></div><div class="field"><label>رقم ولي الأمر</label><input name="parentPhone" required inputmode="tel"></div><div class="field"><label>رقم الطالب</label><input name="studentPhone" inputmode="tel"></div><div class="field"><label>الصف</label><select name="grade">${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div><div class="field"><label>موعد الأونلاين</label><select name="group"></select></div><div class="field"><label>الشهر</label><select name="month">${MONTHS.map(m=>`<option>${safe(m)}</option>`).join('')}</select></div><button class="btn primary" type="submit">حفظ وإصدار الكود</button></form></div></div>`);const apply=()=>{const q=normalizeText(document.getElementById('onlineStudentSearch2').value),grade=document.getElementById('onlineStudentGrade2').value,pay=document.getElementById('onlineStudentPayment2').value;const rows=source.filter(s=>(!q||normalizeText(`${s.name} ${s.studentCode} ${s.studentPhone} ${s.parentPhone}`).includes(q))&&(grade==='all'||s.grade===grade)&&(pay==='all'||(pay==='paid')===s.paid));document.getElementById('onlineStudentsProfessional').innerHTML=professionalStudentCards(rows);document.getElementById('onlineStudentCount').textContent=`${rows.length} طالب`;};['onlineStudentSearch2','onlineStudentGrade2','onlineStudentPayment2'].forEach(id=>document.getElementById(id).oninput=apply);const form=document.getElementById('onlineStudentProfessionalForm'),refreshGroups=()=>{const grade=form.grade.value,groups=(adminData.groups||[]).filter(g=>scheduleMode(g)==='online'&&g.active!==false&&g.grade===grade);form.group.innerHTML=groups.map(g=>`<option>${safe(g.name)}</option>`).join('')||'<option value="">لا يوجد موعد أونلاين لهذا الصف</option>';};form.grade.onchange=refreshGroups;refreshGroups();form.onsubmit=async event=>{event.preventDefault();const input=Object.fromEntries(new FormData(form).entries()),button=form.querySelector('[type=submit]');if(!input.group)return aToast('أضف موعد أونلاين لهذا الصف أولًا');input.deliveryMode='online';input.studentName=input.name;input.studentPhone=phoneDigits(input.studentPhone);input.parentPhone=phoneDigits(input.parentPhone);input.paid=false;input.active=true;button.disabled=true;try{const created=await window.MFCloud.createStudentAccess(input);if(!created?.studentCode)throw new Error('Student code missing');const student={...input,...created,parentCode:created.studentCode,code:created.studentCode,id:created.studentCode,attendance:[],grades:[],homeworks:[],recitations:[]};adminData.students.push(student);saveData(adminData);closeOnlineStudentModal();showIssuedCodes(student,'تم تسجيل طالب الأونلاين');renderOnlineStudentsProfessional();}catch(error){aToast(adminActionErrorMessage(error,'تعذر تسجيل الطالب على قاعدة البيانات.'));}finally{button.disabled=false;}};hydrateIcons();}
 window.openOnlineStudentModal=()=>{const modal=document.getElementById('onlineStudentModal');if(modal)modal.hidden=false;};window.closeOnlineStudentModal=()=>{const modal=document.getElementById('onlineStudentModal');if(modal)modal.hidden=true;};
 function renderPaymentsUnified(){fresh();const all=(adminData.students||[]).map(normalizeStudent);content(`<div class="section-head"><div><span class="kicker"><span data-icon="database"></span> الدفع والاشتراكات</span><h2 class="section-title">متابعة دفع السنتر والأونلاين</h2><p class="section-desc">اختار نوع الدراسة والصف، ثم علّم على الطلاب الذين دفعوا. الحالة تظهر فورًا في بوابة الطالب.</p></div></div><div class="card student-filter-bar"><select id="paymentMode"><option value="all">السنتر والأونلاين</option><option value="center">طلاب السنتر</option><option value="online">طلاب الأونلاين</option></select><select id="paymentGrade"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><input id="paymentSearch" type="search" placeholder="بحث بالاسم أو الكود"><select id="paymentState"><option value="all">كل الحالات</option><option value="paid">تم الدفع</option><option value="unpaid">لم يدفع</option></select></div><div id="paymentStudentList"></div>`);const render=()=>{const mode=document.getElementById('paymentMode').value,grade=document.getElementById('paymentGrade').value,q=normalizeText(document.getElementById('paymentSearch').value),state=document.getElementById('paymentState').value,rows=all.filter(s=>(mode==='all'||(s.deliveryMode==='online'?'online':'center')===mode)&&(grade==='all'||s.grade===grade)&&(!q||normalizeText(`${s.name} ${s.studentCode}`).includes(q))&&(state==='all'||(state==='paid')===s.paid));document.getElementById('paymentStudentList').innerHTML=`<div class="payment-check-grid">${rows.map(s=>`<label class="payment-check-card ${s.paid?'is-paid':''}"><input type="checkbox" ${s.paid?'checked':''} onchange="setPaidUnified('${safe(s.studentCode)}',this.checked)"><span class="student-avatar">${safe(String(s.name||'ط').charAt(0))}</span><div><b>${safe(s.name)}</b><small>${safe(s.studentCode)} · ${safe(s.grade)} · ${safe(s.group||'-')}</small></div><span class="badge ${s.paid?'good':'warn'}">${s.paid?'تم الدفع':'لم يدفع'}</span></label>`).join('')||'<div class="card empty-state"><h3>لا يوجد طلاب مطابقون</h3></div>'}</div>`;};['paymentMode','paymentGrade','paymentSearch','paymentState'].forEach(id=>document.getElementById(id).oninput=render);render();hydrateIcons();}
-function currentPaymentMonthKey(){const now=new Date(),month=String(now.getMonth()+1).padStart(2,'0');return `${now.getFullYear()}-${month}`;}
+function currentPaymentMonthKey(){return cairoAdminDateKey().slice(0,7);}
 function paymentMonthLabel(key){const [year,month]=String(key||'').split('-'),index=Number(month)-1;return index>=0&&index<12?`${MONTHS[index]} ${year}`:String(key||'');}
 function paymentRecordFor(code,monthKey){return (adminData.paymentRecords||[]).find(item=>String(item.studentCode)===String(code)&&String(item.monthKey)===String(monthKey));}
+function adminPaymentRecordsComplete(){
+  const state=adminRecordStates.paymentRecords;
+  return state.loaded&&!state.hasMore&&!state.error&&state.received<adminRecordLimits.paymentRecords;
+}
+function unpaidAdminStudents(monthKey){
+  const paidCodes=new Set((adminData.paymentRecords||[]).filter(record=>record.monthKey===monthKey&&record.paid===true).map(record=>String(record.studentCode)));
+  return (adminData.students||[]).filter(student=>student.active!==false&&!paidCodes.has(String(stCode(student))));
+}
+function openAdminPaymentDraft(code,monthKey){
+  if(!canOpenAdminSection('payments'))return;
+  const student=(adminData.students||[]).find(item=>String(stCode(item))===code);
+  if(!student||student.active===false)return aToast('الطالب غير متاح');
+  const record=paymentRecordFor(code,monthKey);
+  if(record?.paid===true)return aToast('الاشتراك مسجل كمدفوع لهذا الشهر');
+  if(!record&&!adminPaymentRecordsComplete())return aToast('استنى اكتمال تحميل سجلات الدفع قبل تجهيز الرسالة');
+  const phone=adminWhatsAppPhone(student.parentPhone);
+  if(!phone)return aToast('رقم ولي الأمر غير مسجل');
+  const message=`السلام عليكم، بنفكّر حضرتك باشتراك الطالب ${stName(student)} لشهر ${paymentMonthLabel(monthKey)} في منصة المستر سعد عويضة. لو حضرتك دفعت بالفعل، ياريت تبعتلنا تأكيد الدفع عشان نحدّث السجل. شكرًا لحضرتك.`;
+  window.open(whatsappLink(phone,message),'_blank','noopener,noreferrer');
+}
+const pendingMonthlyPayments=new Set();
 window.setPaidUnified=async(code,paid)=>{
   const student=adminData.students.find(s=>String(stCode(s))===String(code));if(!student)return;
-  const monthKey=document.getElementById('paymentMonth')?.value||currentPaymentMonthKey();if(!/^\d{4}-\d{2}$/.test(monthKey))return aToast('اختر شهر الاشتراك أولًا');
-  const existing=paymentRecordFor(code,monthKey),beforeStudent={paid:student.paid,paymentDate:student.paymentDate,currentPaymentMonth:student.currentPaymentMonth},beforeRecord=existing?{...existing}:null;
-  const record={...(existing||{}),id:`${code}_${monthKey}`,studentCode:code,monthKey,monthLabel:paymentMonthLabel(monthKey),paid,paymentDate:paid?isoDateAdmin():'',amount:Number(document.getElementById('paymentAmount')?.value||existing?.amount||0),method:document.getElementById('paymentMethod')?.value||existing?.method||'نقدي'};
-  student.paid=paid;student.paymentDate=record.paymentDate;student.currentPaymentMonth=monthKey;
-  if(existing)Object.assign(existing,record);else adminData.paymentRecords.push(record);saveData(adminData);
-  try{if(!window.MFCloud?.saveMonthlyPayment)throw new Error('Monthly payment service unavailable');const saved=await window.MFCloud.saveMonthlyPayment(record,student);Object.assign(record,saved||{});aToast(paid?`تم تسجيل دفع ${record.monthLabel}`:`تم تسجيل عدم دفع ${record.monthLabel}`);renderMonthlyPaymentsV63();}
-  catch(error){Object.assign(student,beforeStudent);if(beforeRecord&&existing)Object.assign(existing,beforeRecord);else if(!beforeRecord)adminData.paymentRecords=adminData.paymentRecords.filter(item=>item!==record);saveData(adminData);aToast(adminActionErrorMessage(error,'تعذر حفظ اشتراك الشهر.'));}
+  const monthKey=document.getElementById('paymentMonth')?.value||currentPaymentMonthKey();if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey))return aToast('اختر شهر الاشتراك أولًا');
+  const key=`${code}_${monthKey}`;
+  if(pendingMonthlyPayments.has(key))return;
+  const existing=paymentRecordFor(code,monthKey);
+  const amount=Number(document.getElementById('paymentAmount')?.value||existing?.amount||0);
+  if(!Number.isFinite(amount)||amount<0)return aToast('اكتب مبلغ صحيح.');
+  const record={...(existing||{}),id:key,studentCode:code,monthKey,monthLabel:paymentMonthLabel(monthKey),paid,paymentDate:paid?cairoAdminDateKey():'',amount,method:document.getElementById('paymentMethod')?.value||existing?.method||'نقدي'};
+  pendingMonthlyPayments.add(key);
+  try{
+    const saved=await window.MFCloud.saveMonthlyPayment(record,student);
+    const latest=paymentRecordFor(code,monthKey);
+    if(latest)Object.assign(latest,record,saved);else adminData.paymentRecords.push({...record,...saved});
+    if(monthKey===currentPaymentMonthKey())Object.assign(student,{paid,paymentDate:record.paymentDate,currentPaymentMonth:monthKey});
+    saveData(adminData);
+    aToast(paid?`تم تسجيل دفع ${record.monthLabel}`:`تم تسجيل عدم دفع ${record.monthLabel}`);
+    if(currentSection==='payments')renderMonthlyPaymentsV63();
+  }catch(error){
+    aToast(adminActionErrorMessage(error,'تعذر حفظ اشتراك الشهر.'));
+    if(currentSection==='payments')renderMonthlyPaymentsV63();
+  }finally{pendingMonthlyPayments.delete(key);}
 };
 function mixedQuestionConfig(type,question={}){const model=window.MFExamEditor.normalizeQuestion({...question,type});if(type==='essay')return '<div class="exam-type-note">سؤال مقالي — سيظهر للمدرس للتصحيح اليدوي.</div>';const options=type==='truefalse'?['صح','غلط']:model.options;const labels=type==='truefalse'?['صح','غلط']:['أ','ب','ج','د'];return `${type==='mcq'?`<div class="exam-options-grid">${['أ','ب','ج','د'].map((label,index)=>`<label><span>${label}</span><input data-question-option="${index}" value="${safe(options[index]||'')}" required></label>`).join('')}</div>`:''}<div class="field"><label>الإجابة الصحيحة</label><select data-correct-answer required><option value="">اختر الإجابة الصحيحة</option>${labels.map((label,index)=>`<option value="${index}" ${model.correctIndex===index?'selected':''}>${safe(label)}</option>`).join('')}</select></div>`;}
 function mixedQuestionCard(index,question={}){const model=window.MFExamEditor.normalizeQuestion(question);return `<article class="exam-builder-question" data-exam-question><div class="exam-question-head"><b>السؤال <span data-question-number>${index+1}</span></b><div class="question-order-actions"><button class="small-btn ghost" type="button" onclick="moveMixedQuestion(this,-1)" aria-label="تحريك السؤال لأعلى">↑</button><button class="small-btn ghost" type="button" onclick="moveMixedQuestion(this,1)" aria-label="تحريك السؤال لأسفل">↓</button></div><select data-question-type onchange="changeQuestionType(this)"><option value="mcq" ${model.type==='mcq'?'selected':''}>اختيار من متعدد</option><option value="truefalse" ${model.type==='truefalse'?'selected':''}>صح أو غلط</option><option value="essay" ${model.type==='essay'?'selected':''}>مقالي</option></select><label class="question-points-field">درجة السؤال <input data-question-points type="number" min="0.25" step="0.25" value="${safe(model.points)}" required></label><button class="small-btn danger" type="button" onclick="removeMixedQuestion(this)">حذف</button></div><div class="field"><label>نص السؤال</label><textarea data-question-text rows="2" required>${safe(model.question)}</textarea></div><div data-question-config>${mixedQuestionConfig(model.type,model)}</div></article>`;}
@@ -1424,7 +1763,13 @@ window.exportMonthlyPayments=function(){const monthKey=document.getElementById('
 function renderMonthlyPaymentsV63(){
   fresh();const all=(adminData.students||[]).map(academicStudent),savedMonth=sessionStorage.getItem('paymentMonth')||currentPaymentMonthKey();
   content(`<div class="section-head"><div><span class="kicker"><span data-icon="database"></span> الدفع والاشتراكات</span><h2 class="section-title">اشتراك شهري للسنتر والأونلاين</h2><p class="section-desc">كل شهر له سجل مستقل؛ تغيير حالة شهر لا يمسح الشهور السابقة.</p></div><button class="btn ghost" type="button" onclick="exportMonthlyPayments()">تصدير الشهر CSV</button></div><div class="card monthly-payment-toolbar"><div class="field"><label>شهر الاشتراك</label><input id="paymentMonth" type="month" value="${safe(savedMonth)}"></div><div class="field"><label>المبلغ الافتراضي</label><input id="paymentAmount" type="number" min="0" inputmode="decimal" placeholder="اختياري"></div><div class="field"><label>طريقة الدفع</label><select id="paymentMethod"><option>نقدي</option><option>تحويل</option><option>محفظة إلكترونية</option><option>أخرى</option></select></div></div><div class="card student-filter-bar"><select id="paymentMode"><option value="all">السنتر والأونلاين</option><option value="center">طلاب السنتر</option><option value="online">طلاب الأونلاين</option></select><select id="paymentGrade"><option value="all">كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select><input id="paymentSearch" type="search" placeholder="بحث بالاسم أو الكود"><select id="paymentState"><option value="all">كل الحالات</option><option value="paid">تم الدفع</option><option value="unpaid">لم يدفع</option></select></div><div id="paymentStudentList"></div>`);
-  const render=()=>{const monthKey=document.getElementById('paymentMonth').value||currentPaymentMonthKey(),mode=document.getElementById('paymentMode').value,grade=document.getElementById('paymentGrade').value,q=normalizeText(document.getElementById('paymentSearch').value),state=document.getElementById('paymentState').value;sessionStorage.setItem('paymentMonth',monthKey);const rows=all.filter(s=>{const record=paymentRecordFor(s.studentCode,monthKey),paid=record?.paid===true;return (mode==='all'||studentMode(s)===mode)&&(grade==='all'||s.grade===grade)&&(!q||normalizeText(`${s.name} ${s.studentCode}`).includes(q))&&(state==='all'||(state==='paid')===paid);});document.getElementById('paymentStudentList').innerHTML=`<div class="payment-row-list">${rows.map(s=>{const record=paymentRecordFor(s.studentCode,monthKey),paid=record?.paid===true,code=safe(s.studentCode);return `<article class="payment-student-row ${paid?'is-paid':'is-unpaid'}"><div class="compact-student-identity"><span class="student-avatar">${safe(String(s.name||'ط').charAt(0))}</span><div><b>${safe(s.name)}</b><small>${code} · ${safe(s.grade)} · ${safe(s.group||'-')}</small></div></div><span class="badge ${s.deliveryMode==='online'?'online-mode':'good'}">${s.deliveryMode==='online'?'أونلاين':'سنتر'}</span><span class="badge ${paid?'good':'warn'}">${paid?'تم الدفع':'لم يدفع'}</span><div class="payment-toggle-actions"><button class="small-btn ${paid?'primary':'ghost'}" onclick="setPaidUnified('${code}',true)">دفع</button><button class="small-btn ${!paid?'danger':'ghost'}" onclick="setPaidUnified('${code}',false)">لم يدفع</button><button class="small-btn ghost" onclick="openPaymentHistory('${code}')">السجل</button></div></article>`;}).join('')||'<div class="card empty-state"><h3>لا يوجد طلاب مطابقون</h3></div>'}</div>`;hydrateIcons();};
+  const render=()=>{const monthKey=document.getElementById('paymentMonth').value||currentPaymentMonthKey(),mode=document.getElementById('paymentMode').value,grade=document.getElementById('paymentGrade').value,q=normalizeText(document.getElementById('paymentSearch').value),state=document.getElementById('paymentState').value;sessionStorage.setItem('paymentMonth',monthKey);const rows=all.filter(s=>{const record=paymentRecordFor(s.studentCode,monthKey),paid=record?.paid===true;return (mode==='all'||studentMode(s)===mode)&&(grade==='all'||s.grade===grade)&&(!q||normalizeText(`${s.name} ${s.studentCode}`).includes(q))&&(state==='all'||(state==='paid')===paid);});document.getElementById('paymentStudentList').innerHTML=`<div class="payment-row-list">${rows.map(s=>{const record=paymentRecordFor(s.studentCode,monthKey),paid=record?.paid===true,code=safe(s.studentCode);return `<article class="payment-student-row ${paid?'is-paid':'is-unpaid'}"><div class="compact-student-identity"><span class="student-avatar">${safe(String(s.name||'ط').charAt(0))}</span><div><b>${safe(s.name)}</b><small>${code} · ${safe(s.grade)} · ${safe(s.group||'-')}</small></div></div><span class="badge ${s.deliveryMode==='online'?'online-mode':'good'}">${s.deliveryMode==='online'?'أونلاين':'سنتر'}</span><span class="badge ${paid?'good':'warn'}">${paid?'تم الدفع':'لم يدفع'}</span><div class="payment-toggle-actions"><button class="small-btn ${paid?'primary':'ghost'}" onclick="setPaidUnified('${code}',true)">دفع</button><button class="small-btn ${!paid?'danger':'ghost'}" onclick="setPaidUnified('${code}',false)">لم يدفع</button><button class="small-btn ghost" onclick="openPaymentHistory('${code}')">السجل</button>${!paid&&s.active!==false?`<button class="small-btn ghost payment-whatsapp-draft" type="button" data-payment-whatsapp="${code}" ${adminWhatsAppPhone(s.parentPhone)?'':'disabled title="رقم ولي الأمر غير مسجل"'}><span data-icon="external-link" aria-hidden="true"></span> تجهيز رسالة واتساب</button>`: ''}</div></article>`;}).join('')||'<div class="card empty-state"><h3>لا يوجد طلاب مطابقون</h3></div>'}</div>`;hydrateIcons();};
+  document.getElementById('paymentStudentList').addEventListener('click',event=>{
+    const button=event.target.closest('[data-payment-whatsapp]');
+    if(!button)return;
+    const monthKey=document.getElementById('paymentMonth').value||currentPaymentMonthKey();
+    openAdminPaymentDraft(button.dataset.paymentWhatsapp,monthKey);
+  });
   ['paymentMonth','paymentMode','paymentGrade','paymentSearch','paymentState'].forEach(id=>document.getElementById(id).oninput=render);render();hydrateIcons();
 }
 
@@ -1438,7 +1783,45 @@ renderStudents=renderStudentsUnifiedV62;
 renderAttendance=renderAttendanceUnifiedV62;
 renderAttendanceUnified=renderAttendanceUnifiedV62;
 
-function examTargetLabel(item){return item.deliveryMode==='online'?'أونلاين':item.deliveryMode==='center'?'سنتر':'السنتر والأونلاين';}
+function examTargetLabel(item){
+  if(item.targetingMode==='students'||item.targetStudentCodes?.length)return 'طلاب محددون';
+  return item.deliveryMode==='online'?'أونلاين':item.deliveryMode==='center'?'سنتر':'السنتر والأونلاين';
+}
+function installAssessmentAudience(form){
+  form.elements.group.closest('.field').insertAdjacentHTML('afterend',`<label class="field"><span>مين يشوف التقييم؟</span><select name="targetingMode"><option value="class">كل الطلاب المطابقين للصف والمجموعة</option><option value="students">طلاب محددون بالكود</option></select></label>
+    <label class="field full-span" data-assessment-code-field hidden><span>أكواد الطلاب</span><textarea name="targetCodesInput" dir="ltr" rows="2" maxlength="1800" placeholder="12345678, 87654321"></textarea><small>اكتب كود كل طالب في سطر أو افصل بينهم بفاصلة. لازم يطابقوا الصف والمجموعة المختارين.</small></label>`);
+  const update=()=>{
+    const individual=form.elements.targetingMode.value==='students';
+    form.querySelector('[data-assessment-code-field]').hidden=!individual;
+    form.elements.targetCodesInput.disabled=!individual;
+    form.elements.targetCodesInput.required=individual;
+  };
+  form.elements.targetingMode.addEventListener('change',update);
+  update();
+}
+function fillAssessmentAudience(form,item){
+  form.elements.targetingMode.value=item?.targetingMode==='students'||item?.targetStudentCodes?.length?'students':'class';
+  form.elements.targetCodesInput.value=Array.isArray(item?.targetStudentCodes)?item.targetStudentCodes.join('\n'):'';
+  form.elements.targetingMode.dispatchEvent(new Event('change'));
+}
+function readAssessmentAudience(form,values){
+  const targetingMode=form.elements.targetingMode.value;
+  const input=toEnglishDigits(form.elements.targetCodesInput.value).trim().toUpperCase();
+  const targetStudentCodes=targetingMode==='students'?[...new Set(input.split(/[\s,،;؛]+/).filter(Boolean))]:[];
+  if(targetingMode==='students'&&(!targetStudentCodes.length||targetStudentCodes.length>40||targetStudentCodes.some(code=>!/^[A-Z0-9_-]{6,40}$/.test(code)))){
+    throw new Error('اكتب من كود واحد لحد 40 كود طالب صالح.');
+  }
+  const students=new Map((adminData.students||[]).map(student=>[String(stCode(student)).trim().toUpperCase(),student]));
+  for(const code of targetStudentCodes){
+    const raw=students.get(code);
+    if(!raw&&!adminData.studentDirectoryHasMore)throw new Error(`كود الطالب ${code} مش موجود في القائمة.`);
+    if(raw&&(raw.active===false||!learningTargetMatchesStudentClient({...values,targetingMode:'class'},{...academicStudent(raw),studentCode:code}))){
+      throw new Error(`الطالب ${code} غير نشط أو خارج الصف والمجموعة المختارين.`);
+    }
+  }
+  delete values.targetCodesInput;
+  Object.assign(values,{targetingMode,targetStudentCodes});
+}
 function examQuestionType(question){const opts=question?.options||[];return opts.length&&normalizeText(opts.join(' '))===normalizeText('صح غلط')?'truefalse':opts.length?'mcq':'essay';}
 function addExamQuestionDataV63(question={}){
   const list=document.getElementById('mixedQuestions');if(!list)return;
@@ -1493,11 +1876,62 @@ function refreshTargetGroupsV63(form,selected='',selectedScheduleId=''){
   form.elements.group.value=matched?.value||'كل المجموعات';
 }
 function examListRowV63(ex){const state=ex.active===false?'مسودة':(ex.openAt&&new Date(ex.openAt)>new Date()?'مجدول':'منشور');return `<article class="card admin-content-row mobile-manager-row exam-manager-row"><span class="admin-content-icon" data-icon="clipboard"></span><div class="manager-row-copy"><b>${safe(ex.title||'امتحان')}</b><small>${examTargetLabel(ex)} · ${safe(ex.grade||'كل الصفوف')} · ${safe(ex.group||'كل المجموعات')} · ${safe(ex.questionCount||parseExamQuestions(ex.text||'').length)} سؤال</small></div><span class="badge manager-row-status ${ex.active===false?'warn':'good'}">${state}</span><div class="mobile-manager-actions"><button class="small-btn primary" type="button" onclick="openExamEditorV63('${safe(ex.id)}')">تعديل</button><button class="small-btn ghost" type="button" onclick="duplicateExamV63('${safe(ex.id)}')">نسخ</button><button class="small-btn ghost" type="button" onclick="toggleExamV63('${safe(ex.id)}')">${ex.active===false?'نشر':'إيقاف'}</button><button class="small-btn danger" type="button" onclick="deleteItem('exams','${safe(ex.id)}')">حذف</button></div></article>`;}
+function installCenterExamGrades(){
+  const host=document.querySelector('#adminContent .admin-section');
+  const groups=(adminData.groups||[]).filter(group=>group.id&&group.active!==false&&group.deliveryMode!=='online');
+  const today=cairoAdminDateKey();
+  host.insertAdjacentHTML('beforeend',`<details class="card science-admin-tool" id="centerExamGrades"><summary>كشف درجات امتحان السنتر</summary>
+    <form><div class="science-center-exam-fields"><label>مجموعة السنتر<select name="groupId" required><option value="">اختر المجموعة</option>
+    ${groups.map(group=>`<option value="${safe(group.id)}">${safe(group.name)} · ${safe(group.grade||'')}</option>`).join('')}</select></label>
+    <label>اسم الامتحان<input name="title" required maxlength="150"></label>
+    <label>التاريخ<input name="date" type="date" value="${today}" max="${today}" required></label>
+    <label>الدرجة النهائية<input name="maxScore" type="number" min=".01" max="1000" step="any" required></label></div>
+    <p class="section-desc">اترك الدرجة فاضية لو مش هتسجل نتيجة الطالب دلوقتي. لتعديل نتيجة سابقة استخدم نفس المجموعة والاسم والتاريخ والدرجة النهائية.</p>
+    ${adminData.studentDirectoryHasMore?'<p class="section-desc">الكشف بيعرض الطلاب المحمّلين في الجلسة.</p>':''}
+    <div data-center-roster></div>
+    <button class="btn primary" type="submit">حفظ الدرجات</button>
+    <p data-center-grade-status role="status"></p></form></details>`);
+  const form=host.querySelector('#centerExamGrades form');
+  const list=form.querySelector('[data-center-roster]');
+  const status=form.querySelector('[data-center-grade-status]');
+  form.elements.groupId.addEventListener('change',()=>{
+    const selected=form.elements.groupId.value;
+    const roster=selected?(adminData.students||[]).filter(student=>student.active!==false&&student.deliveryMode!=='online'&&String(student.scheduleId||'')===selected):[];
+    list.innerHTML=roster.map(student=>`<div class="science-admin-archive-row" data-center-student="${safe(stCode(student))}"><b>${safe(stName(student))}</b>
+      <label>الدرجة<input data-center-score type="number" min="0" step="any" inputmode="decimal"></label><label><input data-center-absent type="checkbox"> غائب</label></div>`).join('')||'<p>مفيش طلاب ظاهرين للمجموعة المختارة.</p>';
+  });
+  list.addEventListener('change',event=>{
+    if(event.target.matches('[data-center-absent]'))event.target.closest('[data-center-student]').querySelector('[data-center-score]').disabled=event.target.checked;
+  });
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const button=form.querySelector('[type="submit"]');
+    if(button.disabled)return;
+    const maxScore=Number(form.elements.maxScore.value);
+    const rows=[...list.querySelectorAll('[data-center-student]')].flatMap(row=>{
+      const absent=row.querySelector('[data-center-absent]').checked;
+      const value=row.querySelector('[data-center-score]').value;
+      return absent||value!==''?[{studentCode:row.dataset.centerStudent,absent,score:absent?null:Number(value)}]:[];
+    });
+    if(!rows.length||rows.length>100||rows.some(row=>row.score>maxScore||row.score<0)){status.textContent='راجع الدرجات وحدد من طالب واحد لـ100 طالب في كل حفظ.';return;}
+    button.disabled=true;
+    try{
+      const response=await window.MFCloud.saveCenterExamGrades({groupId:form.elements.groupId.value,title:form.elements.title.value.trim(),date:form.elements.date.value,maxScore,rows});
+      for(const row of response.rows){
+        const student=(adminData.students||[]).find(item=>stCode(item)===row.studentCode);
+        if(student)student.grades=mergeAdminRecordRows(student.grades||[],[row]);
+      }
+      status.textContent=`اتحفظت نتائج ${response.rows.length} طالب.`;
+    }catch(error){status.textContent=adminActionErrorMessage(error,error.message||'تعذّر حفظ الدرجات.');}
+    finally{button.disabled=false;}
+  });
+}
+
 function renderExamsManagerV63(){
   fresh();const attempts=(adminData.examAttempts||[]).slice().reverse(),pending=attempts.filter(item=>item.needsManualReview||item.status==='pending_manual'),bank=(adminData.questions||[]).filter(item=>item.content&&!item.fileUrl);
   content(`<div class="section-head mobile-manager-head"><div><span class="kicker"><span data-icon="clipboard"></span> الامتحانات</span><h2 class="section-title">إنشاء وتعديل الامتحانات</h2><p class="section-desc">أنشئ امتحان أسئلة تفاعلية أو امتحان PDF، وحدد الصف ونوع الدراسة قبل النشر.</p></div><button class="btn primary" type="button" onclick="openExamEditorV63()">+ امتحان جديد</button></div><div class="admin-clean-list mobile-manager-list">${(adminData.exams||[]).map(examListRowV63).join('')||'<div class="card empty-state"><h3>لا توجد امتحانات بعد</h3><p>ابدأ بإنشاء امتحان ثم اختر PDF أو أسئلة.</p></div>'}</div><details class="card admin-collapsible" ${pending.length?'open':''}><summary>محاولات تحتاج تصحيح <span class="badge warn">${pending.length}</span></summary>${pending.map(examAttemptRowHTML).join('')||'<p>لا توجد محاولات معلقة.</p>'}</details><details class="card admin-collapsible"><summary>كل النتائج والمحاولات</summary>${attempts.map(examAttemptRowHTML).join('')||'<p>لا توجد محاولات.</p>'}</details>
   <div class="admin-form-modal wide-modal mobile-manager-modal mobile-exam-editor" id="examEditorV63" hidden><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">منشئ الامتحان</span><h2 id="examEditorTitleV63">امتحان جديد</h2></div><button class="small-btn danger" type="button" onclick="closeExamEditorV63()">إغلاق</button></div><form id="examFormV63" class="mobile-manager-form"><input type="hidden" name="id"><section class="exam-builder-step"><h3>1. إعداد الامتحان</h3><div class="exam-meta-grid"><div class="field"><label>اسم الامتحان</label><input name="title" required></div><div class="field"><label>نوع الدراسة</label><select name="deliveryMode"><option value="all">السنتر والأونلاين</option><option value="center">السنتر فقط</option><option value="online">الأونلاين فقط</option></select></div><div class="field"><label>الصف</label><select name="grade"><option>كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div><div class="field"><label>العام الدراسي</label><input name="academicYear" value="${safe(adminData.settings?.academicYear||'')}" placeholder="2026/2027"></div><div class="field"><label>الترم</label><select name="term"><option>الترم الأول</option><option>الترم الثاني</option></select></div><div class="field"><label>المجموعة</label><select name="group">${examGroupsOptionsV63()}</select></div><div class="field"><label>المدة بالدقائق</label><input name="duration" type="number" min="1" max="300" value="20" required></div><div class="field"><label>يفتح في</label><input name="openAt" type="datetime-local"></div><div class="field"><label>يغلق في</label><input name="closeAt" type="datetime-local"></div></div><div class="field"><label>تعليمات الامتحان</label><textarea name="instructions"></textarea></div><label class="exam-pdf-upload"><span><b>PDF اختياري</b><small>يظل الملف القديم عند التعديل إذا لم تختر ملفًا جديدًا.</small></span><input name="pdfFile" type="file" accept="application/pdf"></label><div class="option-grid"><label class="option-card"><input name="active" type="checkbox"> نشر الامتحان الآن</label><label class="option-card"><input name="allowRetake" type="checkbox"> السماح بإعادة الامتحان</label></div></section><section class="exam-builder-step"><div class="exam-builder-title"><div><h3>2. أسئلة الامتحان</h3><small>اختياري، صح وغلط، ومقالي في امتحان واحد.</small></div></div>${bank.length?`<details class="question-bank-import"><summary>إضافة من بنك الأسئلة <span class="badge">${bank.length}</span></summary><div class="question-bank-picks">${bank.map(item=>`<label><input type="checkbox" value="${safe(item.id)}"> <span><b>${safe(item.title)}</b><small>${safe(item.grade||'كل الصفوف')}</small></span></label>`).join('')}</div><button class="small-btn primary" type="button" onclick="importBankQuestionsV63()">إضافة المحدد</button></details>`:''}<div id="mixedQuestions"></div><button class="btn ghost exam-add-question-bottom" type="button" onclick="addMixedQuestion()"><span data-icon="plus"></span> إضافة سؤال تحت آخر سؤال</button></section><button class="btn primary full-width" type="submit">حفظ الامتحان</button></form></div></div>`);
-  const form=document.getElementById('examFormV63');form.querySelector('.exam-meta-grid').insertAdjacentHTML('afterbegin','<div class="field"><label>صيغة الامتحان</label><select name="examFormat"><option value="questions">أسئلة تفاعلية</option><option value="pdf">ملف PDF</option><option value="mixed">PDF وأسئلة</option></select></div><div class="field"><label>الدرجة النهائية للامتحان</label><input name="maxScore" type="number" min="1" step="0.25" value="20" required><small>يجب أن تساوي مجموع درجات الأسئلة.</small></div>');form.addEventListener('submit',saveExamV63);['deliveryMode','grade','academicYear','term'].forEach(key=>form.elements[key]?.addEventListener('change',()=>refreshTargetGroupsV63(form)));form.elements.examFormat.addEventListener('change',()=>updateExamFormatV63(form));hydrateIcons();
+  installCenterExamGrades(); const form=document.getElementById('examFormV63');installAssessmentAudience(form);form.querySelector('.exam-meta-grid').insertAdjacentHTML('afterbegin','<div class="field"><label>صيغة الامتحان</label><select name="examFormat"><option value="questions">أسئلة تفاعلية</option><option value="pdf">ملف PDF</option><option value="mixed">PDF وأسئلة</option></select></div><div class="field"><label>الدرجة النهائية للامتحان</label><input name="maxScore" type="number" min="1" step="0.25" value="20" required><small>يجب أن تساوي مجموع درجات الأسئلة.</small></div>');form.addEventListener('submit',saveExamV63);['deliveryMode','grade','academicYear','term'].forEach(key=>form.elements[key]?.addEventListener('change',()=>refreshTargetGroupsV63(form)));form.elements.examFormat.addEventListener('change',()=>updateExamFormatV63(form));hydrateIcons();
 }
 function updateExamFormatV63(form){const format=form?.elements.examFormat?.value||'questions',questions=form?.querySelectorAll('.exam-builder-step')[1],pdf=form?.querySelector('.exam-pdf-upload');if(questions)questions.hidden=format==='pdf';if(pdf)pdf.classList.toggle('required-upload',format==='pdf');}
 window.closeExamEditorV63=function(){const modal=document.getElementById('examEditorV63'),form=document.getElementById('examFormV63');if(form?.dataset.saving==='true')return aToast('انتظر حتى يكتمل حفظ الامتحان');if(modal)modal.hidden=true;};
@@ -1509,6 +1943,7 @@ window.openExamEditorV63=function(id=''){
   form.elements.openAt.value=assignmentDateTimeLocalAdmin(item?.openAt);form.elements.closeAt.value=assignmentDateTimeLocalAdmin(item?.closeAt);
   form.elements.examFormat.value=item?.examFormat||(item?.pdfUrl&&!parseExamQuestions(item.text||'').length?'pdf':item?.pdfUrl?'mixed':'questions');
   refreshTargetGroupsV63(form,item?.group||'كل المجموعات',item?.scheduleId||'');
+  fillAssessmentAudience(form,item);
   if(form.elements.examFormat.value!=='pdf'){
     const questions=item&&(Array.isArray(item.questions)&&item.questions.length?item.questions:parseExamQuestions(item.text||'')),rows=(questions?.length?questions:[{}]).map(question=>window.MFExamEditor.normalizeQuestion({...question,type:question.type||examQuestionType(question)}));
     list.innerHTML=rows.map((question,index)=>mixedQuestionCard(index,question)).join('');
@@ -1527,7 +1962,9 @@ async function saveExamV63(event){
     if(format==='pdf'&&!file&&!existing?.pdfUrl)return aToast('اختر ملف PDF للامتحان');
     if(!openTime.ok||!closeTime.ok)return aToast('موعد الامتحان غير صالح');
     if(openTime.value&&closeTime.value&&new Date(closeTime.value)<=new Date(openTime.value))return aToast('موعد الغلق يجب أن يكون بعد موعد الفتح');
-    values.openAt=openTime.value;values.closeAt=closeTime.value;values.scheduleId=form.elements.group.selectedOptions[0]?.dataset.scheduleId||'';values.id=values.id||`ex-${Date.now()}`;values.text=format==='pdf'?'':serialized.text;values.questions=format==='pdf'?[]:serialized.questions;values.active=form.active.checked;values.allowRetake=form.allowRetake.checked;values.questionCount=format==='pdf'?0:serialized.questions.length;values.updatedAt=new Date().toISOString();
+    values.openAt=openTime.value;values.closeAt=closeTime.value;values.scheduleId=form.elements.group.selectedOptions[0]?.dataset.scheduleId||'';
+    try{readAssessmentAudience(form,values);}catch(error){return aToast(error.message);}
+    values.id=values.id||`ex-${Date.now()}`;values.text=format==='pdf'?'':serialized.text;values.questions=format==='pdf'?[]:serialized.questions;values.active=form.active.checked;values.allowRetake=form.allowRetake.checked;values.questionCount=format==='pdf'?0:serialized.questions.length;values.updatedAt=new Date().toISOString();
     if(file){const uploaded=await window.MFCloud.uploadAttachment(file,'exam-pdf');values.pdfUrl=uploaded.url;values.pdfName=file.name;}
     if(!window.MFCloud?.saveExam)throw new Error('Exam save service unavailable');
     const candidate={...(existing||{}),...values,...(!existing?{createdAt:new Date().toISOString()}: {})},saved=await window.MFCloud.saveExam(candidate),index=adminData.exams.findIndex(item=>String(item.id)===String(values.id));
@@ -1543,8 +1980,8 @@ function assignmentQuestionsV68(item){if(Array.isArray(item?.questions))return i
 function assignmentQuestionInputV68(value=''){return `<div class="assignment-question-input"><span class="assignment-question-number"></span><textarea rows="2" placeholder="اكتب السؤال هنا">${safe(value)}</textarea><button class="small-btn danger" type="button" onclick="removeAssignmentQuestionV68(this)" aria-label="حذف السؤال">حذف</button></div>`;}
 window.addAssignmentQuestionV68=function(value=''){const box=document.getElementById('assignmentQuestionsV68');if(!box)return;box.insertAdjacentHTML('beforeend',assignmentQuestionInputV68(value));box.querySelector('.assignment-question-input:last-child textarea')?.focus();};
 window.removeAssignmentQuestionV68=function(button){const box=button.closest('#assignmentQuestionsV68');button.closest('.assignment-question-input')?.remove();if(box&&!box.children.length)addAssignmentQuestionV68();};
-function assignmentRowV63(item){const count=assignmentSubmissionsV63(item.id).length,questions=assignmentQuestionsV68(item).length,contentLabel=[questions?`${questions} سؤال`:'',item.fileUrl?'PDF/ملف':''].filter(Boolean).join(' + ')||'تعليمات',publishState=assignmentPublishStateAdmin(item);return `<article class="card admin-content-row mobile-manager-row assignment-manager-row assignment-${publishState.key}"><span class="admin-content-icon" data-icon="file-text"></span><div class="manager-row-copy"><b>${safe(item.title||'واجب')}</b><small>${examTargetLabel(item)} · ${safe(item.grade||'كل الصفوف')} · ${safe(item.group||'كل المجموعات')} · آخر موعد ${safe(item.dueDate||'غير محدد')}</small><small class="assignment-publish-label">${safe(assignmentPublishLabelAdmin(item))}</small><small class="assignment-content-label">${safe(contentLabel)}</small></div><span class="badge manager-row-status ${publishState.className}">${publishState.label}</span><div class="mobile-manager-actions">${item.fileUrl?`<a class="small-btn ghost" href="${safeExternalUrl(item.fileUrl)}" target="_blank" rel="noopener noreferrer">فتح الملف</a>`:''}<button class="small-btn ghost" onclick="showAssignmentSubmissionsV63('${safe(item.id)}')">التسليمات (${count})</button><button class="small-btn primary" onclick="openAssignmentEditorV63('${safe(item.id)}')">تعديل</button><button class="small-btn ghost" onclick="toggleAssignmentV63('${safe(item.id)}')">${item.active===false?'تفعيل':'إيقاف'}</button><button class="small-btn danger" onclick="deleteItem('assignments','${safe(item.id)}')">حذف</button></div></article>`;}
-function renderAssignmentsManagerV63(){fresh();const rows=[...(adminData.assignments||[])].sort((a,b)=>{const aTime=assignmentPublishMillisAdmin(a.publishAt)||assignmentPublishMillisAdmin(a.createdAt),bTime=assignmentPublishMillisAdmin(b.publishAt)||assignmentPublishMillisAdmin(b.createdAt);return bTime-aTime;});content(`<div class="section-head mobile-manager-head"><div><span class="kicker"><span data-icon="file-text"></span> الواجبات</span><h2 class="section-title">جدولة الواجبات والتسليمات</h2><p class="section-desc">يمكنك تجهيز واجبات السنة كلها الآن وتحديد موعد ظهور كل واجب؛ لن يراه الطالب قبل الموعد المحدد.</p></div><button class="btn primary" onclick="openAssignmentEditorV63()">+ واجب جديد</button></div><div class="card assignment-schedule-help"><span data-icon="calendar"></span><div><b>النشر التلقائي يعمل بدون فتح لوحة المدرس</b><p>فعّل الواجب وحدد «موعد الظهور». سيبقى مجدولًا ثم يظهر تلقائيًا للصف والمجموعة المحددين.</p></div></div><div class="admin-clean-list mobile-manager-list">${rows.map(assignmentRowV63).join('')||'<div class="card empty-state"><h3>لا توجد واجبات</h3></div>'}</div><div class="admin-form-modal mobile-manager-modal assignment-editor-v68" id="assignmentEditorV63" hidden><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">منشئ الواجب</span><h2 id="assignmentTitleV63">واجب جديد</h2></div><button class="small-btn danger" type="button" onclick="closeAssignmentEditorV63()">إغلاق</button></div><form id="assignmentFormV63" class="admin-form-grid mobile-manager-form"><input type="hidden" name="id"><div class="field"><label>عنوان الواجب</label><input name="title" required></div><div class="field"><label>نوع الدراسة</label><select name="deliveryMode"><option value="all">السنتر والأونلاين</option><option value="center">السنتر فقط</option><option value="online">الأونلاين فقط</option></select></div><div class="field"><label>الصف</label><select name="grade"><option>كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div><div class="field"><label>العام الدراسي</label><input name="academicYear" value="${safe(adminData.settings?.academicYear||'')}" placeholder="2026/2027"></div><div class="field"><label>الترم</label><select name="term"><option>الترم الأول</option><option>الترم الثاني</option></select></div><div class="field"><label>المجموعة</label><select name="group">${examGroupsOptionsV63()}</select></div><div class="field assignment-publish-field"><label>موعد ظهور الواجب للطالب</label><input name="publishAt" type="datetime-local"><small>اتركه فارغًا ليظهر فور الحفظ، أو حدد يومًا وساعة للنشر التلقائي.</small></div><div class="field"><label>آخر موعد للتسليم</label><input name="dueDate" type="date"></div><div class="field full-span"><label>تعليمات الواجب</label><textarea name="notes" placeholder="مثال: حل الأسئلة وارفع الإجابة PDF أو صور واضحة"></textarea></div><section class="assignment-question-builder full-span"><div><div><b>الأسئلة المكتوبة</b><small>أضف سؤالًا أو أكثر، أو اتركها فارغة لو الواجب PDF فقط.</small></div><button class="small-btn primary" type="button" onclick="addAssignmentQuestionV68()">+ إضافة سؤال</button></div><div id="assignmentQuestionsV68"></div></section><label class="admin-file-drop full-span assignment-pdf-drop"><span data-icon="upload"></span><span><b>رفع ملف الواجب</b><small>PDF أو صورة من الموبايل — الحد الأقصى 15MB</small></span><input name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></label><div class="assignment-existing-file full-span" id="assignmentExistingFileV68" hidden></div><label class="option-card full-span assignment-active-option"><input name="active" type="checkbox"> تفعيل الواجب — سيظهر تلقائيًا في الموعد المحدد</label><button class="btn primary full-span" type="submit">حفظ الواجب</button></form></div></div>`);const form=document.getElementById('assignmentFormV63');form.addEventListener('submit',saveAssignmentV63);['deliveryMode','grade','academicYear','term'].forEach(key=>form.elements[key]?.addEventListener('change',()=>refreshTargetGroupsV63(form)));hydrateIcons();}
+function assignmentRowV63(item){const count=assignmentSubmissionsV63(item.id).length,questions=assignmentQuestionsV68(item).length,contentLabel=[questions?`${questions} سؤال`:'',item.fileUrl?'PDF/ملف':''].filter(Boolean).join(' + ')||'تعليمات',publishState=assignmentPublishStateAdmin(item);return `<article class="card admin-content-row mobile-manager-row assignment-manager-row assignment-${publishState.key}"><span class="admin-content-icon" data-icon="file-text"></span><div class="manager-row-copy"><b>${safe(item.title||'واجب')}</b><small>${examTargetLabel(item)} · ${safe(item.grade||'كل الصفوف')} · ${safe(item.group||'كل المجموعات')} · آخر موعد ${safe(item.dueDate||'غير محدد')}</small><small class="assignment-publish-label">${safe(assignmentPublishLabelAdmin(item))}</small><small class="assignment-content-label">${safe(contentLabel)}</small></div><span class="badge manager-row-status ${publishState.className}">${publishState.label}</span><div class="mobile-manager-actions">${item.fileUrl?`<a class="small-btn ghost" href="${safeExternalUrl(item.fileUrl)}" target="_blank" rel="noopener noreferrer">فتح الملف</a>`:''}<button class="small-btn ghost" data-assignment-file="${safe(item.id)}" onclick="showAssignmentSubmissionsV63('${safe(item.id)}')">التسليمات (${count})</button><button class="small-btn primary" onclick="openAssignmentEditorV63('${safe(item.id)}')">تعديل</button><button class="small-btn ghost" onclick="toggleAssignmentV63('${safe(item.id)}')">${item.active===false?'تفعيل':'إيقاف'}</button><button class="small-btn danger" onclick="deleteItem('assignments','${safe(item.id)}')">حذف</button></div></article>`;}
+function renderAssignmentsManagerV63(){fresh();const rows=[...(adminData.assignments||[])].sort((a,b)=>{const aTime=assignmentPublishMillisAdmin(a.publishAt)||assignmentPublishMillisAdmin(a.createdAt),bTime=assignmentPublishMillisAdmin(b.publishAt)||assignmentPublishMillisAdmin(b.createdAt);return bTime-aTime;});content(`<div class="section-head mobile-manager-head"><div><span class="kicker"><span data-icon="file-text"></span> الواجبات</span><h2 class="section-title">جدولة الواجبات والتسليمات</h2><p class="section-desc">يمكنك تجهيز واجبات السنة كلها الآن وتحديد موعد ظهور كل واجب؛ لن يراه الطالب قبل الموعد المحدد.</p></div><button class="btn primary" onclick="openAssignmentEditorV63()">+ واجب جديد</button></div><div class="card assignment-schedule-help"><span data-icon="calendar"></span><div><b>النشر التلقائي يعمل بدون فتح لوحة المدرس</b><p>فعّل الواجب وحدد «موعد الظهور». سيبقى مجدولًا ثم يظهر تلقائيًا للصف والمجموعة المحددين.</p></div></div><div class="admin-clean-list mobile-manager-list">${rows.map(assignmentRowV63).join('')||'<div class="card empty-state"><h3>لا توجد واجبات</h3></div>'}</div><div class="admin-form-modal mobile-manager-modal assignment-editor-v68" id="assignmentEditorV63" hidden><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">منشئ الواجب</span><h2 id="assignmentTitleV63">واجب جديد</h2></div><button class="small-btn danger" type="button" onclick="closeAssignmentEditorV63()">إغلاق</button></div><form id="assignmentFormV63" class="admin-form-grid mobile-manager-form"><input type="hidden" name="id"><div class="field"><label>عنوان الواجب</label><input name="title" required></div><div class="field"><label>نوع الدراسة</label><select name="deliveryMode"><option value="all">السنتر والأونلاين</option><option value="center">السنتر فقط</option><option value="online">الأونلاين فقط</option></select></div><div class="field"><label>الصف</label><select name="grade"><option>كل الصفوف</option>${GRADES.map(g=>`<option>${safe(g)}</option>`).join('')}</select></div><div class="field"><label>العام الدراسي</label><input name="academicYear" value="${safe(adminData.settings?.academicYear||'')}" placeholder="2026/2027"></div><div class="field"><label>الترم</label><select name="term"><option>الترم الأول</option><option>الترم الثاني</option></select></div><div class="field"><label>المجموعة</label><select name="group">${examGroupsOptionsV63()}</select></div><div class="field assignment-publish-field"><label>موعد ظهور الواجب للطالب</label><input name="publishAt" type="datetime-local"><small>اتركه فارغًا ليظهر فور الحفظ، أو حدد يومًا وساعة للنشر التلقائي.</small></div><div class="field"><label>آخر موعد للتسليم</label><input name="dueDate" type="date"></div><div class="field full-span"><label>تعليمات الواجب</label><textarea name="notes" placeholder="مثال: حل الأسئلة وارفع الإجابة PDF أو صور واضحة"></textarea></div><section class="assignment-question-builder full-span"><div><div><b>الأسئلة المكتوبة</b><small>أضف سؤالًا أو أكثر، أو اتركها فارغة لو الواجب PDF فقط.</small></div><button class="small-btn primary" type="button" onclick="addAssignmentQuestionV68()">+ إضافة سؤال</button></div><div id="assignmentQuestionsV68"></div></section><label class="admin-file-drop full-span assignment-pdf-drop"><span data-icon="upload"></span><span><b>رفع ملف الواجب</b><small>PDF أو صورة من الموبايل — الحد الأقصى 15MB</small></span><input name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></label><div class="assignment-existing-file full-span" id="assignmentExistingFileV68" hidden></div><label class="option-card full-span assignment-active-option"><input name="active" type="checkbox"> تفعيل الواجب — سيظهر تلقائيًا في الموعد المحدد</label><button class="btn primary full-span" type="submit">حفظ الواجب</button></form></div></div>`);const form=document.getElementById('assignmentFormV63');installAssessmentAudience(form);form.addEventListener('submit',saveAssignmentV63);['deliveryMode','grade','academicYear','term'].forEach(key=>form.elements[key]?.addEventListener('change',()=>refreshTargetGroupsV63(form)));hydrateIcons();}
 window.closeAssignmentEditorV63=function(){const modal=document.getElementById('assignmentEditorV63');if(modal)modal.hidden=true;};
 window.openAssignmentEditorV63=function(id=''){
   const modal=document.getElementById('assignmentEditorV63'),form=document.getElementById('assignmentFormV63');
@@ -1562,6 +1999,7 @@ window.openAssignmentEditorV63=function(id=''){
   });
   form.elements.publishAt.value=assignmentDateTimeLocalAdmin(item?.publishAt);
   refreshTargetGroupsV63(form,item?.group||'كل المجموعات',item?.scheduleId||'');
+  fillAssessmentAudience(form,item);
   form.elements.active.checked=item?item.active!==false:true;
   const questions=document.getElementById('assignmentQuestionsV68');
   questions.innerHTML='';
@@ -1574,10 +2012,35 @@ window.openAssignmentEditorV63=function(id=''){
   form.elements.title.focus();
   hydrateIcons();
 };
-async function saveAssignmentV63(event){event.preventDefault();const form=event.currentTarget,values=Object.fromEntries(new FormData(form).entries()),file=form.file.files[0],existing=(adminData.assignments||[]).find(item=>String(item.id)===String(values.id)),before=existing?{...existing}:null,button=form.querySelector('[type=submit]'),questions=[...document.querySelectorAll('#assignmentQuestionsV68 textarea')].map(input=>input.value.trim()).filter(Boolean),publishLocal=String(values.publishAt||'').trim(),publishTime=cairoAdminLocalToIso(publishLocal);delete values.file;if(file&&file.size>15*1024*1024)return aToast('حجم ملف الواجب أكبر من 15MB');if(file&&!['application/pdf','image/jpeg','image/png','image/webp'].includes(file.type))return aToast('اختر ملف PDF أو صورة JPG أو PNG أو WebP');if(!questions.length&&!file&&!existing?.fileUrl)return aToast('أضف سؤالًا واحدًا على الأقل أو ارفع ملف PDF');if(publishLocal&&values.dueDate&&values.dueDate<publishLocal.slice(0,10))return aToast('آخر موعد للتسليم يجب أن يكون في يوم النشر أو بعده');if(!publishTime.ok)return aToast('موعد ظهور الواجب غير صالح');values.publishAt=publishTime.value;values.scheduleId=form.elements.group.selectedOptions[0]?.dataset.scheduleId||'';values.id=values.id||`as-${Date.now()}`;values.questions=questions;values.questionCount=questions.length;values.active=form.active.checked;values.updatedAt=new Date().toISOString();button.disabled=true;try{if(file){const uploaded=await window.MFCloud.uploadAttachment(file,'assignments');values.fileUrl=uploaded.url;values.fileName=file.name;values.fileType=file.type;}const index=adminData.assignments.findIndex(item=>String(item.id)===String(values.id)),candidate={...(existing||{}),...values,...(!existing?{createdAt:new Date().toISOString()}: {})},saved=await window.MFCloud.saveLearningItem('assignments',candidate);if(index>=0)adminData.assignments[index]={...candidate,...saved};else adminData.assignments.push({...candidate,...saved});saveData(adminData);markAdminSaved();const savedItem=adminData.assignments.find(item=>String(item.id)===String(values.id)),state=assignmentPublishStateAdmin(savedItem);aToast(index>=0?'تم تعديل الواجب':state.key==='scheduled'?'تم حفظ وجدولة الواجب':'تم حفظ الواجب وإتاحته للطلاب');closeAssignmentEditorV63();renderAssignmentsManagerV63();}catch(error){if(before){const index=adminData.assignments.findIndex(item=>String(item.id)===String(values.id));if(index>=0)adminData.assignments[index]=before;}else adminData.assignments=adminData.assignments.filter(item=>String(item.id)!==String(values.id));updateAdminSaveState('dirty');aToast(adminActionErrorMessage(error,'تعذر حفظ الواجب.'));}finally{button.disabled=false;}}
+async function saveAssignmentV63(event){event.preventDefault();const form=event.currentTarget,values=Object.fromEntries(new FormData(form).entries()),file=form.file.files[0],existing=(adminData.assignments||[]).find(item=>String(item.id)===String(values.id)),before=existing?{...existing}:null,button=form.querySelector('[type=submit]'),questions=[...document.querySelectorAll('#assignmentQuestionsV68 textarea')].map(input=>input.value.trim()).filter(Boolean),publishLocal=String(values.publishAt||'').trim(),publishTime=cairoAdminLocalToIso(publishLocal);delete values.file;if(file&&file.size>15*1024*1024)return aToast('حجم ملف الواجب أكبر من 15MB');if(file&&!['application/pdf','image/jpeg','image/png','image/webp'].includes(file.type))return aToast('اختر ملف PDF أو صورة JPG أو PNG أو WebP');if(!questions.length&&!file&&!existing?.fileUrl)return aToast('أضف سؤالًا واحدًا على الأقل أو ارفع ملف PDF');if(publishLocal&&values.dueDate&&values.dueDate<publishLocal.slice(0,10))return aToast('آخر موعد للتسليم يجب أن يكون في يوم النشر أو بعده');if(!publishTime.ok)return aToast('موعد ظهور الواجب غير صالح');values.publishAt=publishTime.value;values.scheduleId=form.elements.group.selectedOptions[0]?.dataset.scheduleId||'';values.id=values.id||`as-${Date.now()}`;values.questions=questions;values.questionCount=questions.length;values.active=form.active.checked;values.updatedAt=new Date().toISOString();try{readAssessmentAudience(form,values);}catch(error){return aToast(error.message);}button.disabled=true;try{if(file){const uploaded=await window.MFCloud.uploadAttachment(file,'assignments');values.fileUrl=uploaded.url;values.fileName=file.name;values.fileType=file.type;}const index=adminData.assignments.findIndex(item=>String(item.id)===String(values.id)),candidate={...(existing||{}),...values,...(!existing?{createdAt:new Date().toISOString()}: {})},saved=await window.MFCloud.saveLearningItem('assignments',candidate);if(index>=0)adminData.assignments[index]={...candidate,...saved};else adminData.assignments.push({...candidate,...saved});saveData(adminData);markAdminSaved();const savedItem=adminData.assignments.find(item=>String(item.id)===String(values.id)),state=assignmentPublishStateAdmin(savedItem);aToast(index>=0?'تم تعديل الواجب':state.key==='scheduled'?'تم حفظ وجدولة الواجب':'تم حفظ الواجب وإتاحته للطلاب');closeAssignmentEditorV63();renderAssignmentsManagerV63();}catch(error){if(before){const index=adminData.assignments.findIndex(item=>String(item.id)===String(values.id));if(index>=0)adminData.assignments[index]=before;}else adminData.assignments=adminData.assignments.filter(item=>String(item.id)!==String(values.id));updateAdminSaveState('dirty');aToast(adminActionErrorMessage(error,'تعذر حفظ الواجب.'));}finally{button.disabled=false;}}
 window.toggleAssignmentV63=async function(id){const item=(adminData.assignments||[]).find(row=>String(row.id)===String(id));if(!item||item.__saving)return;const before=item.active;item.active=item.active===false;item.__saving=true;try{const candidate={...item};delete candidate.__saving;const saved=await window.MFCloud.saveLearningItem('assignments',candidate);delete item.__saving;Object.assign(item,saved);saveData(adminData);markAdminSaved();renderAssignmentsManagerV63();}catch(error){delete item.__saving;item.active=before;aToast(adminActionErrorMessage(error,'تعذر تحديث الواجب.'));}};
-window.showAssignmentSubmissionsV63=function(id){const assignment=(adminData.assignments||[]).find(item=>String(item.id)===String(id)),rows=assignmentSubmissionsV63(id);document.getElementById('assignmentSubmissionsModal')?.remove();document.body.insertAdjacentHTML('beforeend',`<div class="admin-form-modal mobile-manager-modal" id="assignmentSubmissionsModal"><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">تسليمات الواجب</span><h2>${safe(assignment?.title||'الواجب')}</h2></div><button class="small-btn danger" onclick="this.closest('.admin-form-modal').remove()">إغلاق</button></div><div class="admin-clean-list assignment-submission-list">${rows.map(row=>`<article class="payment-history-row"><div><b>${safe(row.studentName)}</b><small>${safe(row.studentCode)} · ${safe(row.status||'بانتظار المراجعة')}</small></div>${row.fileUrl?`<a class="small-btn" href="${safeExternalUrl(row.fileUrl)}" target="_blank" rel="noopener noreferrer">فتح الملف</a>`:''}<button class="small-btn primary" onclick="reviewHomeworkV63('${safe(id)}','${safe(row.id)}','${safe(row.studentCode)}')">تصحيح</button><button class="small-btn ghost" onclick="reopenHomeworkV700('${safe(id)}','${safe(row.id)}','${safe(row.studentCode)}')">طلب إعادة التسليم</button></article>`).join('')||'<div class="empty-state"><h3>لا توجد تسليمات لهذا الواجب</h3></div>'}</div></div></div>`);};
-window.reviewHomeworkV63=async function(assignmentId,id,studentCode){const student=(adminData.students||[]).find(item=>String(stCode(item))===String(studentCode)),record=(student?.homeworks||[]).find(item=>String(item.id)===String(id));if(!record)return;const score=prompt('الدرجة من 100',record.score??'' );if(score===null)return;if(score!==''&&(Number(score)<0||Number(score)>100))return aToast('اكتب درجة بين 0 و100');const teacherComment=prompt('ملاحظة المدرس',record.teacherComment||'')??(record.teacherComment||'');try{const patch=await window.MFCloud.reviewHomeworkSubmission(id,{status:'تمت المراجعة',approved:true,score,teacherComment});Object.assign(record,patch);aToast('تم حفظ تصحيح الواجب');showAssignmentSubmissionsV63(assignmentId);}catch(error){aToast(adminActionErrorMessage(error,'تعذر حفظ التصحيح.'));}};
+window.reviewHomeworkV63=function(assignmentId,id,studentCode){
+  const student=(adminData.students||[]).find(item=>String(stCode(item))===String(studentCode));
+  const record=(student?.homeworks||[]).find(item=>String(item.id)===String(id));
+  const host=document.querySelector('#assignmentSubmissionsModal [data-homework-grading]');
+  if(!record||!host)return;
+  host.innerHTML='<form class="science-homework-grading"><label>الدرجة من 100<input name="score" type="number" min="0" max="100" step="any"></label><label>ملاحظة المدرس<textarea name="teacherComment" maxlength="800" rows="3"></textarea></label><div class="action-row"><button type="submit" class="btn primary">حفظ التصحيح</button><button type="button" class="btn ghost" data-cancel>إلغاء</button></div></form>';
+  const form=host.querySelector('form');
+  form.elements.score.value=record.score??'';
+  form.elements.score.required=record.score!==null&&record.score!==undefined&&record.score!=='';
+  form.elements.teacherComment.value=record.teacherComment||'';
+  form.querySelector('[data-cancel]').onclick=()=>host.replaceChildren();
+  form.elements.score.focus();
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    const button=form.querySelector('[type=submit]');
+    if(button.disabled||!form.reportValidity())return;
+    button.disabled=true;
+    try{
+      const patch=await window.MFCloud.reviewHomeworkSubmission(id,{status:'تمت المراجعة',approved:true,score:form.elements.score.value,teacherComment:form.elements.teacherComment.value});
+      Object.assign(record,patch);
+      aToast('تم حفظ تصحيح الواجب');
+      if(host.isConnected)showAssignmentSubmissionsV63(assignmentId);
+    }catch(error){
+      aToast(adminActionErrorMessage(error,'تعذر حفظ التصحيح.'));
+    }finally{button.disabled=false;}
+  };
+};
 window.reopenHomeworkV700=async function(assignmentId,id,studentCode){const student=(adminData.students||[]).find(item=>String(stCode(item))===String(studentCode)),record=(student?.homeworks||[]).find(item=>String(item.id)===String(id));if(!record)return;const teacherComment=prompt('اكتب للطالب المطلوب تعديله قبل إعادة التسليم',record.teacherComment||'يرجى مراجعة الواجب وإعادة تسليمه.');if(teacherComment===null)return;try{const patch=await window.MFCloud.reopenHomeworkSubmission(id,{hours:72,teacherComment});Object.assign(record,patch);aToast('تم فتح إعادة التسليم للطالب لمدة 72 ساعة مع حفظ النسخة القديمة');showAssignmentSubmissionsV63(assignmentId);}catch(error){aToast(adminActionErrorMessage(error,'تعذر فتح إعادة التسليم.'));}};
 
 function onlineContentRowV63(item){return `<article class="card admin-content-row mobile-manager-row online-manager-row"><span class="admin-content-icon" data-icon="external-link"></span><div class="manager-row-copy"><b>${safe(item.title||'محتوى')}</b><small>${safe(item.contentType||'تسجيل')} · ${safe(item.grade||'كل الصفوف')} · ${(item.access||'subscribers')==='subscribers'?'للمشتركين':'مجاني'} · ${safe(item.startAt?new Date(item.startAt).toLocaleString('ar-EG'):'بدون موعد')}</small></div><span class="badge manager-row-status ${item.active===false?'warn':'good'}">${item.active===false?'مسودة':'منشور'}</span><div class="mobile-manager-actions">${item.fileUrl||item.linkUrl?`<a class="small-btn ghost" href="${safeExternalUrl(item.fileUrl||item.linkUrl)}" target="_blank" rel="noopener noreferrer">فتح</a>`:''}<button class="small-btn primary" onclick="openOnlineContentEditorV63('${safe(item.id)}')">تعديل</button><button class="small-btn ghost" onclick="toggleOnlineContentV63('${safe(item.id)}')">${item.active===false?'نشر':'إيقاف'}</button><button class="small-btn danger" onclick="deleteItem('materials','${safe(item.id)}')">حذف</button></div></article>`;}
@@ -1608,36 +2071,54 @@ function cairoAdminDateKey(value=new Date()){
   const parts=Object.fromEntries(new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
-function studentMatchesAssignmentV6924(assignment,rawStudent){
-  const student=academicStudent(rawStudent),mode=studentMode(student),targetMode=assignment?.deliveryMode||'all';
-  if(student.active===false)return false;
-  if(targetMode!=='all'&&targetMode!==mode)return false;
-  if(assignment?.grade&&assignment.grade!=='كل الصفوف'&&!sameAcademicValue(assignment.grade,student.grade))return false;
-  const scheduleTargeted=assignment?.scheduleId&&student.scheduleId;
-  if(scheduleTargeted&&String(assignment.scheduleId)!==String(student.scheduleId))return false;
-  if(!scheduleTargeted&&assignment?.group&&assignment.group!=='كل المجموعات'&&!sameAcademicValue(assignment.group,student.group))return false;
-  if(assignment?.academicYear&&student.academicYear&&!sameAcademicValue(assignment.academicYear,student.academicYear))return false;
-  if(assignment?.term&&student.term&&!sameAcademicValue(assignment.term,student.term))return false;
-  return true;
-}
 function assignmentRosterV6924(assignment){
-  return (adminData.students||[]).filter(student=>studentMatchesAssignmentV6924(assignment,student)).map(student=>{
+  return (adminData.students||[]).flatMap(student=>{
     const normalized=academicStudent(student),submission=(student.homeworks||[]).filter(row=>String(row.assignmentId||'')===String(assignment.id)).sort((a,b)=>String(b.submittedAt||b.createdAt||'').localeCompare(String(a.submittedAt||a.createdAt||'')))[0]||null;
+    const targeted=student.active!==false&&learningTargetMatchesStudentClient(assignment,normalized);
+    if(!targeted&&!submission)return [];
     const submittedAt=submission?.submittedAt||submission?.createdAt||'',submittedDate=cairoAdminDateKey(submittedAt),late=!!submission&&!!assignment.dueDate&&!!submittedDate&&submittedDate>String(assignment.dueDate),overdue=!submission&&!!assignment.dueDate&&String(assignment.dueDate)<cairoAdminDateKey();
-    return {student:normalized,submission,submitted:!!submission,late,overdue,state:submission?(late?'late':'submitted'):(overdue?'late':'missing')};
+    return [{student:normalized,targeted,submission,submitted:!!submission,late,overdue,state:submission?(late?'late':'submitted'):(overdue?'overdue':'missing')}];
   }).sort((a,b)=>Number(a.submitted)-Number(b.submitted)||String(a.student.name).localeCompare(String(b.student.name),'ar'));
 }
 function assignmentRosterRowHtmlV6924(row,assignmentId){
   const submission=row.submission,when=submission?.submittedAt||submission?.createdAt||'',stateLabel=row.submitted?(row.late?'سلّم متأخرًا':submission?.approved?'تم التصحيح':'تم التسليم'):(row.overdue?'متأخر ولم يسلّم':'لم يسلّم'),stateClass=row.submitted?(row.late?'warn':submission?.approved?'good':'primary'):(row.overdue?'danger':'warn');
-  return `<article class="assignment-tracking-row" data-assignment-state="${row.state}"><div class="assignment-student-copy"><b>${safe(row.student.name)}</b><small>${safe(row.student.studentCode)} · ${safe(row.student.grade||'')} · ${safe(row.student.group||'')}</small>${when?`<small>وقت التسليم: ${safe(new Date(when).toLocaleString('ar-EG',{dateStyle:'medium',timeStyle:'short'}))}</small>`:'<small>لا يوجد ملف مرفوع</small>'}${submission?.teacherComment?`<small>ملاحظة: ${safe(submission.teacherComment)}</small>`:''}</div><span class="badge ${stateClass}">${stateLabel}</span><div class="assignment-tracking-actions">${submission?.fileUrl?`<a class="small-btn ghost" href="${safeExternalUrl(submission.fileUrl)}" target="_blank" rel="noopener noreferrer">فتح الملف</a>`:''}${submission?`<button class="small-btn primary" type="button" onclick="reviewHomeworkV63('${safe(assignmentId)}','${safe(submission.id)}','${safe(row.student.studentCode)}')">${submission.approved?'تعديل التصحيح':'تصحيح'}</button>`:''}${submission?.score!==null&&submission?.score!==undefined&&submission?.score!==''?`<strong>${safe(submission.score)} / 100</strong>`:''}</div></article>`;
+  return `<article class="assignment-tracking-row" data-assignment-state="${row.state}" data-assignment-reviewed="${submission?.approved===true}"><div class="assignment-student-copy"><b>${safe(row.student.name)}</b><small>${safe(row.student.studentCode)} · ${safe(row.student.grade||'')} · ${safe(row.student.group||'')}</small>${when?`<small>وقت التسليم: ${safe(new Date(when).toLocaleString('ar-EG',{dateStyle:'medium',timeStyle:'short'}))}</small>`:'<small>لا يوجد ملف مرفوع</small>'}${submission?.teacherComment?`<small>ملاحظة: ${safe(submission.teacherComment)}</small>`:''}</div><span class="badge ${stateClass}">${stateLabel}</span><div class="assignment-tracking-actions">${submission?.fileUrl?`<a class="small-btn ghost" href="${safeExternalUrl(submission.fileUrl)}" target="_blank" rel="noopener noreferrer">فتح الملف</a>`:''}${submission?`<button class="small-btn primary" type="button" onclick="reviewHomeworkV63('${safe(assignmentId)}','${safe(submission.id)}','${safe(row.student.studentCode)}')">${submission.approved?'تعديل التصحيح':'تصحيح'}</button>`:''}${submission?`<button type="button" class="small-btn ghost" onclick="reopenHomeworkV700('${safe(assignmentId)}','${safe(submission.id)}','${safe(row.student.studentCode)}')">طلب إعادة التسليم</button>`:''}${submission?.score!==null&&submission?.score!==undefined&&submission?.score!==''?`<strong>${safe(submission.score)} / 100</strong>`:''}</div></article>`;
 }
-window.filterAssignmentRosterV6924=function(value){document.querySelectorAll('#assignmentTrackingList [data-assignment-state]').forEach(row=>{row.hidden=value!=='all'&&row.dataset.assignmentState!==value;});};
+window.filterAssignmentRosterV6924=function(value){document.querySelectorAll('#assignmentTrackingList [data-assignment-state]').forEach(row=>{row.hidden=!(value==='all'||value==='reviewed'&&row.dataset.assignmentReviewed==='true'||value==='missing'&&['missing','overdue'].includes(row.dataset.assignmentState)||value===row.dataset.assignmentState);});};
 window.exportAssignmentTrackingV6924=function(id){const assignment=(adminData.assignments||[]).find(item=>String(item.id)===String(id)),rows=assignmentRosterV6924(assignment);exportCSV(`assignment-${id}.csv`,[['الطالب','الكود','الصف','المجموعة','الحالة','وقت التسليم','الدرجة','الملاحظة'],...rows.map(row=>[row.student.name,row.student.studentCode,row.student.grade,row.student.group,row.submitted?(row.late?'متأخر':'سلّم'):(row.overdue?'متأخر ولم يسلّم':'لم يسلّم'),row.submission?.submittedAt||'',row.submission?.score??'',row.submission?.teacherComment||''])]);};
 window.showAssignmentSubmissionsV63=function(id){
-  const assignment=(adminData.assignments||[]).find(item=>String(item.id)===String(id));if(!assignment)return;
-  const rows=assignmentRosterV6924(assignment),submitted=rows.filter(row=>row.submitted).length,missing=rows.length-submitted,late=rows.filter(row=>row.late||row.overdue).length,reviewed=rows.filter(row=>row.submission?.approved).length;
-  document.getElementById('assignmentSubmissionsModal')?.remove();
-  document.body.insertAdjacentHTML('beforeend',`<div class="admin-form-modal mobile-manager-modal assignment-tracking-modal" id="assignmentSubmissionsModal"><div class="admin-form-modal-card card"><div class="profile-top"><div><span class="kicker">متابعة الواجب بالتفصيل</span><h2>${safe(assignment.title||'الواجب')}</h2><p class="section-desc">آخر موعد: ${safe(assignment.dueDate||'غير محدد')}</p></div><button class="small-btn danger" type="button" onclick="this.closest('.admin-form-modal').remove()">إغلاق</button></div><div class="metric-grid assignment-tracking-metrics"><div class="metric"><b>${rows.length}</b><small>المطلوب منهم</small></div><div class="metric"><b>${submitted}</b><small>سلّموا</small></div><div class="metric"><b>${missing}</b><small>لم يسلّموا</small></div><div class="metric"><b>${late}</b><small>متأخرون</small></div><div class="metric"><b>${reviewed}</b><small>تم تصحيحهم</small></div></div><div class="admin-toolbar assignment-tracking-toolbar"><select onchange="filterAssignmentRosterV6924(this.value)"><option value="all">كل الطلاب</option><option value="submitted">المسلّمون في الموعد</option><option value="missing">لم يسلّموا</option><option value="late">المتأخرون</option></select><button class="btn ghost" type="button" onclick="exportAssignmentTrackingV6924('${safe(id)}')">تصدير Excel/CSV</button></div><div class="assignment-tracking-list" id="assignmentTrackingList">${rows.map(row=>assignmentRosterRowHtmlV6924(row,id)).join('')||'<div class="empty-state"><h3>لا يوجد طلاب مطابقون لاستهداف الواجب</h3></div>'}</div></div></div>`);hydrateIcons();
+  const assignment=(adminData.assignments||[]).find(item=>String(item.id)===String(id));
+  if(!assignment)return;
+  const rows=assignmentRosterV6924(assignment);
+  const targeted=rows.filter(row=>row.targeted).length;
+  const missing=rows.filter(row=>!row.submitted).length;
+  const submitted=rows.filter(row=>row.submitted).length;
+  const late=rows.filter(row=>row.late).length;
+  const reviewed=rows.filter(row=>row.submission?.approved).length;
+  const previous=document.getElementById('assignmentSubmissionsModal');
+  const filter=previous?.dataset.assignmentId===String(id)?previous.querySelector('[data-homework-filter]')?.value:'all';
+  previous?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="admin-form-modal mobile-manager-modal assignment-tracking-modal" id="assignmentSubmissionsModal" data-assignment-id="${safe(id)}" role="dialog" aria-labelledby="assignmentFileTitle"><div class="admin-form-modal-card card">
+    <div class="profile-top"><div><span class="kicker">ملف الواجب</span><h2 id="assignmentFileTitle">${safe(assignment.title||'الواجب')}</h2><p class="section-desc">${safe(examTargetLabel(assignment))} · ${safe(assignment.grade||'كل الصفوف')} · ${safe(assignment.group||'كل المجموعات')} · آخر موعد: ${safe(assignment.dueDate||'غير محدد')}</p></div><button class="small-btn ghost" type="button" data-close-homework>إغلاق</button></div>
+    <div class="science-homework-summary"><span>المطلوب منهم حاليًا <b>${targeted}</b></span><span>سلّموا <b>${submitted}</b></span><span>لم يسلّموا <b>${missing}</b></span><span>سلّموا متأخر <b>${late}</b></span><span>تم تصحيحهم <b>${reviewed}</b></span></div>
+    ${!adminRecordStates.homeworks.loaded||adminRecordStates.homeworks.hasMore||adminData.studentDirectoryHasMore?'<p class="section-desc">الأعداد والقائمة من السجلات المحمّلة حاليًا.</p>':''}
+    <div class="admin-toolbar assignment-tracking-toolbar"><label>حالة التسليم <select data-homework-filter onchange="filterAssignmentRosterV6924(this.value)"><option value="all">كل الطلاب</option><option value="submitted">سلّموا في الموعد</option><option value="missing">لم يسلّموا</option><option value="late">سلّموا متأخر</option><option value="reviewed">تم تصحيحهم</option></select></label>
+    <button class="btn ghost" type="button" onclick="exportAssignmentTrackingV6924('${safe(id)}')">تصدير CSV</button>
+    </div>
+    <div data-homework-grading></div>
+    <div class="assignment-tracking-list" id="assignmentTrackingList">${rows.map(row=>assignmentRosterRowHtmlV6924(row,id)).join('')||'<div class="empty-state"><h3>لا يوجد طلاب مطابقون لاستهداف الواجب</h3></div>'}</div>
+    </div></div>`);
+  const modal=document.getElementById('assignmentSubmissionsModal');
+  const close=()=>{
+    modal.remove();
+    document.querySelector('button[data-assignment-file="'+CSS.escape(String(id))+'"]')?.focus();
+  };
+  modal.querySelector('[data-close-homework]').onclick=close;
+  modal.addEventListener('keydown',event=>{if(event.key==='Escape')close();});
+  modal.querySelector('[data-homework-filter]').value=filter||'all';
+  filterAssignmentRosterV6924(filter||'all');
+  hydrateIcons();
+  modal.querySelector('[data-close-homework]').focus();
 };
 
 examListRowV63=function(ex){

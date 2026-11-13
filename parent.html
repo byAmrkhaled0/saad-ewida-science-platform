@@ -19,8 +19,9 @@
 <title>صفحة ولي الأمر | المستر سعد عويضة</title>
 <meta content="صفحة ولي الأمر لمتابعة تقرير الطالب: الحضور، الغياب، التسميع، الدرجات، الواجبات وحالة الدفع." name="description"/>
 <link href="assets/v64-mobile.css?v=69.2.0" rel="stylesheet"/>
+<link rel="stylesheet" href="assets/science-experience.css?v=5">
 </head>
-<body id="top">
+<body id="top" class="science-platform science-parent">
 <header class="site-header">
 <div class="container navbar">
 <a aria-label="المستر سعد عويضة" class="logo" href="index.html"><img class="site-brand-logo" src="assets/icon-192.png" width="52" height="52" alt="لوجو منصة المستر سعد عويضة"><span>المستر سعد عويضة <small>متابعة ولي الأمر</small></span></a>
@@ -30,7 +31,7 @@
 <a href="online.html">الأونلاين</a>
 <a href="index.html#booking">الحجز</a>
 <a href="parent.html">ولي الأمر</a>
-<a href="student.html">بوابة الطالب</a>
+<a href="student.html?login=1">بوابة الطالب</a>
 <a href="materials.html">المراجعات والأسئلة</a>
 <a href="exams.html">الامتحانات</a>
 </nav>
@@ -38,16 +39,21 @@
 </div>
 </header>
 <main class="parent-page-v29">
-<section class="parent-hero-v29">
-<div class="container parent-hero-grid-v29">
-<div>
-<span class="kicker"><span data-icon="users"></span> صفحة ولي الأمر</span>
-<h1>تقرير الطالب كامل في مكان واحد</h1>
-<p>اكتب نفس كود الطالب الموحّد أو امسح الباركود لعرض تقرير شهري واضح يمكن مشاركته على واتساب.</p>
+<section class="parent-hero-v29 science-parent-access">
+<div class="container parent-hero-grid-v29 science-student-entry">
+<div class="science-entry-brand"><img src="assets/icon-192.png" width="48" height="48" alt=""><span>المستر سعد عويضة<small>أحياء وعلوم وعلوم متكاملة</small></span></div>
+<div class="science-entry-intro">
+<h1>بوابة ولي الأمر</h1>
+<p>تابع حضور الطالب ودرجاته وواجباته في التقرير الشهري باستخدام الكود الموحّد أو QR.</p>
 </div>
+<img class="science-entry-photo" src="assets/science-parent-study.webp" width="700" height="875" alt="" decoding="async">
 <form class="card parent-search-v29" id="parentSearchForm">
 <div class="field portal-code-field"><label for="parentCode">كود الحساب الموحّد</label><div class="code-input-wrap"><span data-icon="users"></span><input id="parentCode" name="parentCode" placeholder="اكتب الكود الموحّد المكوّن من 8 أرقام" inputmode="numeric" pattern="[0-9٠-٩۰-۹]{8}" maxlength="8" autocomplete="off" spellcheck="false" enterkeyhint="go" required=""/></div><small>نفس الكود والباركود المستخدمين في بوابة الطالب.</small></div>
-<div class="student-search-actions-v29"><button class="btn primary" type="submit"><span data-icon="file-text"></span> عرض تقرير الطالب</button><button class="btn ghost" type="button" onclick="openParentQrScanner()"><span data-icon="qr"></span> مسح الباركود</button></div>
+<div class="student-search-actions-v29">
+<button class="btn primary" type="submit"><span data-icon="log-in" aria-hidden="true"></span> عرض تقرير الطالب</button>
+<span class="science-entry-divider">أو</span>
+<button class="btn ghost science-entry-qr" type="button" onclick="openParentQrScanner()"><span data-icon="qr" aria-hidden="true"></span><span><b>مسح QR</b><small>استخدم الكاميرا لمسح كود الطالب</small></span></button>
+</div>
 <p>يستخدم الطالب وولي الأمر كودًا واحدًا؛ احتفظوا به ولا تشاركوه خارج الأسرة.</p>
 </form>
 </div>
@@ -55,7 +61,7 @@
 <section class="section parent-report-section-v29">
 <div class="container">
 <div class="card result-box parent-result-v29" id="parentResult">
-<div class="empty-state compact-empty-v29">
+<div class="empty-state compact-empty-v29" data-parent-initial>
 <span class="iconbox" data-icon="file-text"></span>
 <h3>اكتب كود الحساب الموحّد لعرض التقرير</h3>
 <p>سيظهر تقرير ولي الأمر هنا بشكل كامل ومنظم.</p>
@@ -78,7 +84,7 @@
 <nav aria-label="تنقل الهاتف" class="mobile-bottom">
 <a href="index.html"><span data-icon="atom"></span><span>الرئيسية</span></a>
 <a href="index.html#booking"><span data-icon="calendar"></span><span>الحجز</span></a>
-<a href="student.html"><span data-icon="user"></span><span>الطالب</span></a>
+<a href="student.html?login=1"><span data-icon="user"></span><span>الطالب</span></a>
 <a href="parent.html"><span data-icon="users"></span><span>ولي الأمر</span></a>
 <a href="exams.html"><span data-icon="clipboard"></span><span>امتحان</span></a>
 </nav>

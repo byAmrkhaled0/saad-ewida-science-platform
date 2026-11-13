@@ -18,13 +18,18 @@
 <link href="assets/site.css?v=69.2.0" rel="stylesheet"/>
 <link href="assets/v61.css?v=69.2.0" rel="stylesheet"/>
 <link href="assets/v64-mobile.css?v=69.2.0" rel="stylesheet"/>
+<link rel="stylesheet" href="assets/science-experience.css?v=8">
 </head>
-<body id="top">
+<body id="top" class="science-platform science-teacher">
 <div class="login-page" id="adminRoot">
-<div class="card login-card">
+<div class="science-login-layout">
+<section class="science-login-brand" aria-label="هوية منصة المستر سعد">
 <div class="logo"><img class="site-brand-logo" src="assets/icon-192.png" width="58" height="58" alt="لوجو منصة المستر سعد عويضة"><span>المستر سعد عويضة <small>صفحة المدرس الخاصة</small></span></div>
-<h1 class="section-title" style="font-size:2.3rem;margin:22px 0 8px">تسجيل دخول المدرس</h1>
-<p style="color:var(--muted);font-weight:800;margin-top:0">هذه صفحة خاصة للمدرس فقط وغير ظاهرة في الموقع العام.</p>
+<p>إدارة الحصص والطلاب</p>
+<img src="assets/science-lab-hero.svg" width="640" height="400" alt="" decoding="async">
+</section>
+<div class="card login-card">
+<h1 class="section-title">تسجيل دخول المدرس</h1>
 <form class="grid" id="loginForm">
 <div class="field"><label for="adminEmail">البريد الإلكتروني</label><input id="adminEmail" autocomplete="username" inputmode="email" name="email" placeholder="اكتب بريد المدرس" required="" type="email" dir="ltr"/></div>
 <div class="field"><label for="adminPassword">كلمة المرور</label><div class="password-field"><input id="adminPassword" autocomplete="current-password" name="password" placeholder="اكتب كلمة المرور" required="" type="password" dir="ltr"/><button type="button" class="password-toggle" id="passwordToggle" aria-label="إظهار كلمة المرور">إظهار</button></div></div>
@@ -32,6 +37,7 @@
 <button class="login-help-link" id="passwordResetButton" type="button">نسيت كلمة المرور؟ أرسل رابط استعادة</button>
 </form>
 <p class="login-security-note"><span aria-hidden="true">🔒</span> دخول آمن ومخصص لحسابات فريق العمل المعتمدة فقط.</p>
+</div>
 </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -42,8 +48,8 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
 <script defer src="assets/firebase-config.js?v=69.2.0"></script>
 <script defer src="assets/firebase-sync.js?v=69.2.0"></script>
-<script defer src="assets/app.js?v=69.2.0"></script>
-<script defer src="assets/admin.js?v=69.2.0"></script>
+<script defer src="assets/app.js?v=3"></script>
+<script defer src="assets/admin.js?v=69.2.3"></script>
 <script defer src="assets/v56-fixes.js?v=69.2.0"></script>
 </body>
 </html>

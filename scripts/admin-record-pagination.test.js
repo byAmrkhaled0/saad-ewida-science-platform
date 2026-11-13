@@ -59,6 +59,38 @@ test('each heavy admin section requests only the records it uses',()=>{
   assert.doesNotMatch(adminSource,/studentRequests:\[/);
 });
 
+test('payment follow-up prepares a draft only when the selected month is reliably unpaid',()=>{
+  const toasts=[], opened=[];
+  const ctx=vm.createContext({
+    adminData:{students:[{studentCode:'12345678',name:'طالب تجريبي',parentPhone:'201000000000'}],paymentRecords:[]},
+    adminRecordStates:{paymentRecords:{loaded:true,hasMore:true,error:'',received:200}},
+    adminRecordLimits:{paymentRecords:5000},
+    canOpenAdminSection:()=>true,
+    stCode:student=>student.studentCode,
+    stName:student=>student.name,
+    adminWhatsAppPhone:value=>value,
+    paymentMonthLabel:month=>month,
+    whatsappLink:(phone,message)=>`https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+    aToast:message=>toasts.push(message),
+    window:{open:(...args)=>opened.push(args)}
+  });
+  const start=adminSource.indexOf('function paymentRecordFor(');
+  const draft=adminSource.indexOf('function openAdminPaymentDraft(',start);
+  vm.runInContext(adminSource.slice(start,adminSource.indexOf('\n}',draft)+2),ctx);
+  ctx.openAdminPaymentDraft('12345678','2026-11');
+  assert.equal(opened.length,0);
+  assert.match(toasts.at(-1),/اكتمال تحميل/);
+  ctx.adminData.paymentRecords.push({studentCode:'12345678',monthKey:'2026-11',paid:true});
+  ctx.openAdminPaymentDraft('12345678','2026-11');
+  assert.equal(opened.length,0);
+  ctx.adminRecordStates.paymentRecords.hasMore=false;
+  ctx.openAdminPaymentDraft('12345678','2026-12');
+  assert.equal(opened.length,1);
+  const url=new URL(opened[0][0]);
+  assert.equal(url.pathname,'/201000000000');
+  assert.match(url.searchParams.get('text'),/طالب تجريبي.*2026-12/);
+});
+
 test('Firestore composite indexes cover ordered student history queries',()=>{
   const config=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../firestore.indexes.json'),'utf8'));
   const signatures=new Set(config.indexes.map(index=>`${index.collectionGroup}:${index.fields.map(field=>`${field.fieldPath}:${field.order}`).join('|')}`));
